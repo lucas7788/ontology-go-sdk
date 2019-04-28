@@ -16,11 +16,17 @@ var (
 	testGasLimit = uint64(20000)
 )
 
+
 func TestMain(m *testing.M) {
 	testOntSdk = NewOntologySdk()
 	testOntSdk.NewRpcClient().SetAddress("http://localhost:20336")
-
 	var err error
+	wallet,err := testOntSdk.CreateWallet("./wallet.dat")
+    if err != nil {
+		return
+	}
+	wallet.NewDefaultSettingAccount(testPasswd)
+	wallet.Save()
 	testWallet, err = testOntSdk.OpenWallet("./wallet.dat")
 	if err != nil {
 		fmt.Printf("account.Open error:%s\n", err)
@@ -32,13 +38,17 @@ func TestMain(m *testing.M) {
 		return
 	}
 
-	ws := testOntSdk.NewWebSocketClient()
-	err = ws.Connect("ws://localhost:20335")
-	if err != nil {
-		fmt.Printf("Connect ws error:%s", err)
-		return
-	}
-	m.Run()
+	//ws := testOntSdk.NewWebSocketClient()
+	//err = ws.Connect("ws://localhost:20335")
+	//if err != nil {
+	//	fmt.Printf("Connect ws error:%s", err)
+	//	return
+	//}
+	//m.Run()
+}
+
+func TestNewWallet(t *testing.T) {
+	testOntSdk.CreateWallet("./wallet.dat")
 }
 
 func TestOnt_Transfer(t *testing.T) {
