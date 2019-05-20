@@ -27,6 +27,9 @@ type Account struct {
 }
 
 func NewAccountFromPrivateKey(privateKey []byte, signatureScheme s.SignatureScheme) (*Account, error) {
+	if privateKey == nil {
+		return nil, fmt.Errorf("privatekey should not be nil")
+	}
 	prikey := ec.ConstructPrivateKey(privateKey, elliptic.P256())
 	privaKey := ec.PrivateKey{
 		Algorithm:  ec.ECDSA,
