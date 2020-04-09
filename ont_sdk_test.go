@@ -48,11 +48,7 @@ var (
 
 func init() {
 	var err error
-	testWallet, err = testOntSdk.OpenWallet("./wallet.dat")
-	if err != nil {
-		fmt.Printf("OpenWallet err: %s\n", err)
-		return
-	}
+	testWallet = NewWallet("./wallet.dat")
 	testOntSdk = NewOntologySdk()
 	testOntSdk.NewRpcClient().SetAddress("http://127.0.0.1:20336")
 	testDefAcc, err = testWallet.GetDefaultAccount(testPasswd)
