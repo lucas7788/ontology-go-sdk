@@ -79,6 +79,50 @@ func main() {
 		return
 	}
 	showBalance(ontSdk, seller.Address, buyer.Address)
+
+	//test ddxf contract
+	if true {
+		tokenHash := make([]byte, 32)
+		template := define.TokenTemplate{
+			DataIDs:   "",
+			TokenHash: string(tokenHash),
+		}
+		if false {
+			param := getPublishParam(seller.Address, tokenHash, template)
+			ddxf.invoke(seller, "dtokenSellerPublish", param)
+			return
+		}
+
+		if false {
+			param := getBuyTokenParam(buyer.Address)
+			ddxf.invoke(buyer, "buyDtoken", param)
+			showBalance(ontSdk, seller.Address, buyer.Address)
+			return
+		}
+
+		if false {
+			param := getUseTokenParam(buyer.Address)
+			ddxf.invoke(buyer, "useToken", param)
+			return
+		}
+		if true {
+			res, err := ddxf.preInvoke("getCountAndAgent",[]interface{}{buyer.Address,resource_id,template.ToBytes()})
+			if err != nil {
+				fmt.Println("error:", err)
+				return
+			}
+			res.ToByteArray()
+		}
+
+		if false {
+			param := []interface{}{resource_id, buyer.Address, []interface{}{agent.Address}, 1}
+			bs, _ := utils.BuildWasmContractParam(param)
+			fmt.Println(common.ToHexString(bs))
+			ddxf.invoke(buyer, "addAgents", param)
+			return
+		}
+	}
+
 	//dtoken contract test
 	if false {
 		tokenHash := make([]byte, 32)
@@ -101,48 +145,6 @@ func main() {
 			ddxf.invoke(seller, "useToken", []interface{}{seller.Address, resource_id, template.ToBytes(), 1})
 		}
 		return
-	}
-
-	//test ddxf contract
-	if true {
-		if false {
-			param := getPublishParam(seller.Address)
-			ddxf.invoke(seller, "dtokenSellerPublish", param)
-			return
-		}
-
-		if false {
-			param := getBuyTokenParam(buyer.Address)
-			ddxf.invoke(buyer, "buyDtoken", param)
-			showBalance(ontSdk, seller.Address, buyer.Address)
-			return
-		}
-		tokenHash := make([]byte, 32)
-		template := define.TokenTemplate{
-			DataIDs:   "",
-			TokenHash: string(tokenHash),
-		}
-		if false {
-			param := getUseTokenParam(buyer.Address)
-			ddxf.invoke(buyer, "useToken", param)
-			return
-		}
-		if true {
-			res, err := ddxf.preInvoke("getCountAndAgent",[]interface{}{buyer.Address,resource_id,template.ToBytes()})
-			if err != nil {
-				fmt.Println("error:", err)
-				return
-			}
-			res.ToByteArray()
-		}
-
-		if false {
-			param := []interface{}{resource_id, buyer.Address, []interface{}{agent.Address}, 1}
-			bs, _ := utils.BuildWasmContractParam(param)
-			fmt.Println(common.ToHexString(bs))
-			ddxf.invoke(buyer, "addAgents", param)
-			return
-		}
 	}
 }
 
@@ -173,13 +175,7 @@ func serializeTokenTemplate(templates []define.TokenTemplate) []byte {
 	return sink.Bytes()
 }
 
-func getPublishParam(seller common.Address) []interface{} {
-
-	tokenHash := make([]byte, 32)
-	template := define.TokenTemplate{
-		DataIDs:   "",
-		TokenHash: string(tokenHash),
-	}
+func getPublishParam(seller common.Address, tokenHash []byte, template define.TokenTemplate) []interface{} {
 	tokenResourceType := make(map[define.TokenTemplate]byte)
 	tokenResourceType[template] = byte(0)
 	tokenEndpoint := make(map[define.TokenTemplate]string)
