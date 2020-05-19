@@ -74,22 +74,22 @@ func main() {
 
 	ddxf := NewDDXF(ontSdk, contractAddr)
 	fmt.Printf("contractAddr:%s, contractAddr:%s\n", contractAddr.ToBase58(), contractAddr.ToHexString())
-	if true {
+	if false {
 		ddxf.deploy(seller, codeHash)
 		return
 	}
 	showBalance(ontSdk, seller.Address, buyer.Address)
 	//dtoken contract test
 	if false {
-		tokenHash := make([]byte, 36)
+		tokenHash := make([]byte, 32)
 		template := define.TokenTemplate{
 			DataIDs:   "",
 			TokenHash: string(tokenHash),
 		}
-		templates := []define.TokenTemplate{template}
-		if true {
+		//templates := []define.TokenTemplate{template}
+		if false {
 			//ddxf.invoke(seller, "generateDToken", []interface{}{seller.Address, resource_id, serializeTokenTemplate(templates), 1})
-			res, _ := ddxf.preInvoke("getCountAndAgent", []interface{}{resource_id, seller.Address, serializeTokenTemplate(templates)})
+			res, _ := ddxf.preInvoke("getCountAndAgent", []interface{}{resource_id, buyer.Address, template.ToBytes()})
 			bs, _ := res.ToByteArray()
 			caa := &define.CountAndAgent{}
 			caa.FromBytes(bs)
@@ -107,8 +107,6 @@ func main() {
 	if true {
 		if false {
 			param := getPublishParam(seller.Address)
-			//bs, _ := utils.BuildWasmContractParam(param)
-			//fmt.Println(common.ToHexString(bs))
 			ddxf.invoke(seller, "dtokenSellerPublish", param)
 			return
 		}
@@ -119,11 +117,23 @@ func main() {
 			showBalance(ontSdk, seller.Address, buyer.Address)
 			return
 		}
-
+		tokenHash := make([]byte, 32)
+		template := define.TokenTemplate{
+			DataIDs:   "",
+			TokenHash: string(tokenHash),
+		}
 		if false {
 			param := getUseTokenParam(buyer.Address)
 			ddxf.invoke(buyer, "useToken", param)
 			return
+		}
+		if true {
+			res, err := ddxf.preInvoke("getCountAndAgent",[]interface{}{buyer.Address,resource_id,template.ToBytes()})
+			if err != nil {
+				fmt.Println("error:", err)
+				return
+			}
+			res.ToByteArray()
 		}
 
 		if false {
@@ -143,7 +153,7 @@ func showBalance(ontSdk *ontology_go_sdk.OntologySdk, seller common.Address, buy
 }
 
 func getUseTokenParam(buyer common.Address) []interface{} {
-	tokenHash := make([]byte, 36)
+	tokenHash := make([]byte, 32)
 	template := define.TokenTemplate{
 		DataIDs:   "",
 		TokenHash: string(tokenHash),
@@ -165,7 +175,7 @@ func serializeTokenTemplate(templates []define.TokenTemplate) []byte {
 
 func getPublishParam(seller common.Address) []interface{} {
 
-	tokenHash := make([]byte, 36)
+	tokenHash := make([]byte, 32)
 	template := define.TokenTemplate{
 		DataIDs:   "",
 		TokenHash: string(tokenHash),
@@ -175,7 +185,7 @@ func getPublishParam(seller common.Address) []interface{} {
 	tokenEndpoint := make(map[define.TokenTemplate]string)
 	tokenEndpoint[template] = "endpoint2"
 	ddo := define.ResourceDDO{
-		ResourceType:      byte(0),
+		ResourceType:      byte(1),
 		TokenResourceType: tokenResourceType,    // RT for tokens
 		Manager:           seller,               // data owner id
 		Endpoint:          "endpoint",           // data service provider uri

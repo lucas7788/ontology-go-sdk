@@ -142,7 +142,7 @@ func (this *DTokenItem) Serialize(sink *common.ZeroCopySink) {
 	this.Fee.Serialize(sink)
 	sink.WriteUint64(this.ExpiredDate)
 	sink.WriteUint32(this.Stocks)
-	sink.WriteUint32(uint32(len(this.Templates)))
+	sink.WriteVarUint(uint64(len(this.Templates)))
 	for _,item := range this.Templates {
 		item.Serialize(sink)
 	}
