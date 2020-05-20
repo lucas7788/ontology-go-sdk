@@ -72,9 +72,19 @@ func main() {
 
 	contractAddr := common.AddressFromVmCode(code)
 
+
+	if false {
+		c, err := ontSdk.GetSmartContract("bd87a3dcf9eacd9c48f2114b03aee981239a0212")
+		if err != nil {
+			return
+		}
+		fmt.Println(c)
+		return
+	}
+
 	ddxf := NewDDXF(ontSdk, contractAddr)
 	fmt.Printf("contractAddr:%s, contractAddr:%s\n", contractAddr.ToBase58(), contractAddr.ToHexString())
-	if false {
+	if true {
 		ddxf.deploy(seller, codeHash)
 		return
 	}
