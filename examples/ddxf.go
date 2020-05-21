@@ -99,7 +99,7 @@ func main() {
 
 	ddxf := NewDDXF(ontSdk, contractAddr, payer)
 	fmt.Printf("contractAddr:%s, contractAddr:%s\n", contractAddr.ToBase58(), contractAddr.ToHexString())
-	if false {
+	if true {
 		ddxf.deploy(seller, codeHash)
 		return
 	}
@@ -147,7 +147,7 @@ func main() {
 			return
 		}
 		if false {
-			param := getPublishParam(seller.Address, tokenHash, template)
+			param := getPublishParam(seller.Address, template)
 			ddxf.invoke(seller, nil, "dtokenSellerPublish", param)
 			return
 		}
@@ -279,7 +279,7 @@ func serializeTokenTemplate(templates []define.TokenTemplate) []byte {
 	return sink.Bytes()
 }
 
-func getPublishParam(seller common.Address, tokenHash []byte, template define.TokenTemplate) []interface{} {
+func getPublishParam(seller common.Address,template define.TokenTemplate) []interface{} {
 	tokenResourceType := make(map[define.TokenTemplate]byte)
 	tokenResourceType[template] = byte(0)
 	tokenEndpoint := make(map[define.TokenTemplate]string)
