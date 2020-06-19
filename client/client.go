@@ -314,8 +314,9 @@ func (this *ClientMgr) PreExecTransaction(mutTx *types.MutableTransaction) (*sdk
 	if err != nil {
 		return nil, err
 	}
+	fmt.Println("****data:", string(data))
 	preResult := &sdkcom.PreExecResult{}
-	err = json.Unmarshal(data, &preResult)
+	err = json.Unmarshal(data, preResult)
 	if err != nil {
 		return nil, fmt.Errorf("json.Unmarshal PreExecResult:%s error:%s", data, err)
 	}

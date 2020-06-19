@@ -55,6 +55,7 @@ type PreExecResult struct {
 	State  byte
 	Gas    uint64
 	Result *ResultItem
+	Notify []NotifyEventInfo
 }
 
 func (this *PreExecResult) UnmarshalJSON(data []byte) (err error) {
