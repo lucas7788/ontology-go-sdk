@@ -10,13 +10,13 @@ import (
 )
 
 var (
-	defGasPrice = uint64(500)
+	defGasPrice = uint64(0)
 )
 
 func main() {
 	sdk := ontology_go_sdk.NewOntologySdk()
 	sdk.NewRpcClient().SetAddress("http://polaris1.ont.io:20336")
-	//sdk.NewRpcClient().SetAddress("http://127.0.0.1:20336")
+	sdk.NewRpcClient().SetAddress("http://127.0.0.1:20336")
 	//sdk.NewRpcClient().SetAddress("http://172.168.3.174:20336")
 
 	pwd := []byte("111111")
@@ -92,6 +92,23 @@ func main() {
 			fmt.Println("h:", h.ToBase58())
 		}
 		fmt.Println("res:", hex.EncodeToString(arr))
+		return
+	}
+
+	if true {
+		addr,_ := common.AddressFromBase58("AT4fXp36Ui22Lbh5ZJUCRBFDJ7axkLyUFM")
+		res, err := sdk.WasmVM.PreExecInvokeWasmVMContract(contractAddress,"getVoterWeight",
+			[]interface{}{addr})
+		if err != nil {
+			fmt.Println("listTopics error: ", err)
+			return
+		}
+		arr, err := res.Result.ToInteger()
+		if err != nil {
+			fmt.Println("listTopics ToArray error: ", err)
+			return
+		}
+		fmt.Println("res:", arr)
 		return
 	}
 
@@ -202,11 +219,5 @@ func main() {
 		}
 		fmt.Println("res:", hex.EncodeToString(arr))
 		return
-	}
-
-	if true {
-		sdk.WasmVM.InvokeWasmVMSmartContract(defGasPrice,20000000,
-			acc1,acc1,contractAddress,"create_topic",
-			[]interface{}{})
 	}
 }
