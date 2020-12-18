@@ -66,7 +66,7 @@ func scanBlock(blockHeight uint32, i int, deltaHeight uint32) {
 			fmt.Println(err)
 			return
 		}
-		if blockHeight > endHeight {
+		if blockHeight >= endHeight {
 			return
 		}
 		fmt.Printf("currentBlockHeight: %d\n", blockHeight)
