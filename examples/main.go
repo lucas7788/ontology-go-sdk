@@ -34,8 +34,11 @@ func main() {
 		wait.Add(1)
 		go func(i int) {
 			defer wait.Done()
+			start := startBlockHeight+uint32(i)*deltaHeight
+			end := start + deltaHeight
+			fmt.Printf("start, i: %d,start: %d, end: %d, \n", i, start, end)
 			scanBlock(startBlockHeight+uint32(i)*deltaHeight, i, deltaHeight)
-			fmt.Printf("finished, i: %d,start: %d, end: %d, \n", i, startBlockHeight+uint32(i)*deltaHeight, startBlockHeight+uint32(i)*deltaHeight+deltaHeight)
+			fmt.Printf("finished, i: %d,start: %d, end: %d, \n", i, start, end)
 		}(i)
 	}
 	wait.Wait()
