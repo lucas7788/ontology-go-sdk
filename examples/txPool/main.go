@@ -26,63 +26,147 @@ const WingABI = "[{\"inputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"c
 var gasPrice, gasLimit uint64
 var testPrivateKey *ecdsa.PrivateKey
 
+type CheckTx struct {
+	txHash      common.Uint256
+	expectState byte
+}
+
+func NewCheckTx(txHash common.Uint256, expectState byte) CheckTx {
+	return CheckTx{
+		txHash:      txHash,
+		expectState: expectState,
+	}
+}
+
 func main() {
 	sdk := ontology_go_sdk.NewOntologySdk()
 	sdk.NewRpcClient().SetAddress("http://127.0.0.1:20336")
-
-	wallet, err := sdk.OpenWallet("")
+	if false {
+		createWallet(sdk)
+		return
+	}
+	wallet, err := sdk.OpenWallet("txpool.dat")
 	checkErr(err)
-	acct, err := wallet.GetAccountByAddress("", []byte(""))
+	acct, err := wallet.GetAccountByAddress("AWCgtHfJywHRCBCJUXix3XH2xJAhPYYU6j", []byte("111111"))
 	checkErr(err)
 	testPrivateKeyStr := "59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
-	testPrivateKey, err = crypto.HexToECDSA(testPrivateKeyStr)
+	testPrivateKey, err := crypto.HexToECDSA(testPrivateKeyStr)
 	checkErr(err)
 	oep4Addr, erc20Addr := deployContract(sdk, acct, testPrivateKey)
+	initContract(sdk, acct, oep4Addr)
 
+	toAddr, _ := common.AddressFromBase58("ASZVKmGCjMJhirNsh7ENyGGXicEPECfcmy")
+
+	checkTxQueue := make(chan CheckTx, 10000)
+	startCheckTxTask(sdk, checkTxQueue, false)
+
+	// 正常交易压力测试
+	l := 10
+	oep4Tx := genOep4Tx(sdk, acct, toAddr, oep4Addr, l)
+	txNonce := 1
+	erc20Txs := genErc20TransferTxs(l, txNonce, erc20Addr, ontAddrToEthAddr(toAddr))
+	txNonce += l
+	for i := 0; i < l; i++ {
+		txHash, err := sdk.SendTransaction(oep4Tx[i])
+		checkErr(err)
+		checkTxQueue <- NewCheckTx(txHash, 1)
+		txHash, err = sdk.SendTransaction(erc20Txs[i])
+		checkErr(err)
+		checkTxQueue <- NewCheckTx(txHash, 1)
+	}
+	// 相同的txNonce交易  交易手续费大的应该成功
+	for i := 0; i < l; i++ {
+		erc20Tx := genErc20TransferTx(txNonce, erc20Addr, ontAddrToEthAddr(toAddr), big.NewInt(1000))
+		erc20Tx2 := genErc20TransferTx(txNonce, erc20Addr, ontAddrToEthAddr(toAddr), big.NewInt(2000))
+		erc20Tx2.GasPrice = erc20Tx.GasPrice + 10
+		txHash, err := sdk.SendTransaction(erc20Tx)
+		checkErr(err)
+		checkTxQueue <- NewCheckTx(txHash, 0)
+		txHash, err = sdk.SendTransaction(erc20Tx2)
+		checkErr(err)
+		checkTxQueue <- NewCheckTx(txHash, 1)
+		txNonce++
+	}
+}
+
+func createWallet(sdk *ontology_go_sdk.OntologySdk) {
+	wallet, err := sdk.CreateWallet("txpool.dat")
+	checkErr(err)
+	pwd := []byte("111111")
+	for i := 0; i < 2; i++ {
+		acct, err := wallet.NewDefaultSettingAccount(pwd)
+		checkErr(err)
+		log.Infof("address:%s", acct.Address.ToBase58())
+	}
+	wallet.Save()
+}
+
+func startCheckTxTask(sdk *ontology_go_sdk.OntologySdk, checkTxQueue chan CheckTx, support bool) {
+	go func() {
+		for checkTx := range checkTxQueue {
+			// 暂时不用
+			if !support {
+				continue
+			}
+			for {
+				evt, err := sdk.GetSmartContractEvent(checkTx.txHash.ToHexString())
+				if evt != nil {
+					if evt.State != checkTx.expectState {
+						panic(checkTx.txHash.ToHexString())
+					} else {
+						break
+					}
+				} else {
+					if err != nil {
+						log.Errorf("txhash: %s, err: %s", checkTx.txHash.ToHexString(), err)
+					}
+					time.Sleep(3 * time.Second)
+					continue
+				}
+			}
+		}
+	}()
+}
+
+func initContract(sdk *ontology_go_sdk.OntologySdk, acct *ontology_go_sdk.Account, oep4Addr common.Address) {
 	gasPrice := uint64(0)
 	gasLimit := uint64(20000)
-	_, err = sdk.NeoVM.InvokeNeoVMContract(gasPrice, gasLimit, acct, acct, oep4Addr,
+	_, err := sdk.NeoVM.InvokeNeoVMContract(gasPrice, gasLimit, acct, acct, oep4Addr,
 		[]interface{}{"init", []interface{}{}})
 	checkErr(err)
 	sdk.WaitForGenerateBlock(time.Second*40, 1)
-
-	toAddr, _ := common.AddressFromBase58("")
-	l := 1000
-	oep4Tx := genOep4Tx(sdk, acct, toAddr, oep4Addr, l)
-	erc20Txs := genErc20TransferTx(l, erc20Addr, "transfer", ontAddrToEthAddr(toAddr))
-	for i := 0; i < l; i++ {
-		sdk.SendTransaction(oep4Tx[i])
-		sdk.SendTransaction(erc20Txs[i])
-	}
 }
 
 func ontAddrToEthAddr(ontAddr common.Address) common2.Address {
 	return common2.BytesToAddress(ontAddr[:])
 }
 
-func genErc20TransferTx(l int, contractAddr common2.Address, method string, toAddr common2.Address) []*types2.MutableTransaction {
-	txNonce := int64(1)
+func genErc20TransferTxs(l int, txNonce int, contractAddr common2.Address, toAddr common2.Address) []*types2.MutableTransaction {
 	erc20Txs := make([]*types2.MutableTransaction, 0)
 	rand.Seed(time.Now().Unix())
 	for i := 0; i < l; i++ {
 		amt := rand.Int63n(10000)
-		erc20Tx, err := GenEVMTx(txNonce, contractAddr, method, toAddr, amt)
-		checkErr(err)
-		tx, err := types2.TransactionFromEIP155(erc20Tx)
-		checkErr(err)
-		mutTx, err := tx.IntoMutable()
-		checkErr(err)
-		erc20Txs = append(erc20Txs, mutTx)
+		erc20Tx := genErc20TransferTx(txNonce, contractAddr, toAddr, big.NewInt(amt))
+		erc20Txs = append(erc20Txs, erc20Tx)
 		txNonce++
 	}
 	return erc20Txs
 }
+func genErc20TransferTx(txNonce int, contractAddr common2.Address, toAddr common2.Address, amt *big.Int) *types2.MutableTransaction {
+	erc20Tx, err := GenEVMTx(txNonce, contractAddr, "transfer", toAddr, amt)
+	checkErr(err)
+	tx, err := types2.TransactionFromEIP155(erc20Tx)
+	checkErr(err)
+	mutTx, err := tx.IntoMutable()
+	checkErr(err)
+	return mutTx
+}
 
-func GenEVMTx(nonce int64, contractAddr common2.Address, method string, params ...interface{}) (*types.Transaction, error) {
+func GenEVMTx(nonce int, contractAddr common2.Address, method string, params ...interface{}) (*types.Transaction, error) {
 	chainId := big.NewInt(5851)
 	opts, err := bind.NewKeyedTransactorWithChainID(testPrivateKey, chainId)
-	opts.GasPrice = big.NewInt(0)
-	opts.Nonce = big.NewInt(nonce)
+	opts.GasPrice = big.NewInt(1000000000) // 1Gwei
+	opts.Nonce = big.NewInt(int64(nonce))
 	opts.GasLimit = 8000000
 
 	checkErr(err)
