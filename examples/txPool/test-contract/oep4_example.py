@@ -3,10 +3,11 @@ OntCversion = '2.0.0'
 APC Token
 """
 from ontology.interop.System.Storage import GetContext, Get, Put, Delete
-from ontology.interop.System.Runtime import CheckWitness
+from ontology.interop.System.Runtime import CheckWitness,Log
 from ontology.interop.System.Action import RegisterAction
 from ontology.builtins import concat
 from ontology.interop.Ontology.Runtime import Base58ToAddress
+
 
 TransferEvent = RegisterAction("transfer", "from", "to", "amount")
 ApprovalEvent = RegisterAction("approval", "owner", "spender", "amount")
@@ -18,7 +19,6 @@ SYMBOL = 'SYMBOL'
 DECIMALS = 6
 FACTOR = 1000000
 TotalSupply = 1000000000
-Admin = Base58ToAddress("ANwj1AC4gUarPbw8sD3AenazMDv1gXFtqr")
 ZERO_ADDRESS = bytearray(b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00')
 
 BALANCE_PREFIX = bytearray(b'\x01')
@@ -33,7 +33,7 @@ def Main(operation, args):
     :return:
     """
     if operation == 'init':
-        return init()
+        return init(args[0])
     if operation == 'name':
         return name()
     if operation == 'symbol':
@@ -75,13 +75,13 @@ def Main(operation, args):
     return False
 
 
-def init():
+def init(admin):
     supply = Get(GetContext(), TOTAL_SUPPLY_KEY)
     assert(supply == 0)
     total = TotalSupply * FACTOR
     Put(GetContext(), TOTAL_SUPPLY_KEY, total)
-    Put(GetContext(), concat(BALANCE_PREFIX, Admin), total)
-    TransferEvent(ZERO_ADDRESS, Admin, total)
+    Put(GetContext(), concat(BALANCE_PREFIX, admin), total)
+    TransferEvent(ZERO_ADDRESS, admin, total)
     return True
 
 

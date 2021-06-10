@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	ontology_go_sdk "github.com/ontio/ontology-go-sdk"
+	"github.com/ontio/ontology-go-sdk/oep4"
 	"github.com/ontio/ontology/cmd/utils"
 	"github.com/ontio/ontology/common"
 	"github.com/ontio/ontology/common/log"
@@ -33,22 +34,22 @@ var gasPrice, gasLimit uint64
 var testPrivateKey *ecdsa.PrivateKey
 var chainId int64
 
-
 func main() {
 	chainId = 12345
-	gasPrice = 2500
-	gasLimit = 20400000
+	gasPrice = 0
+	gasLimit = 20800000
 	sdk := ontology_go_sdk.NewOntologySdk()
 	testNet := "http://172.168.3.73:20336"
-	//testNet = "http://127.0.0.1:20336"
+	testNet = "http://127.0.0.1:20336"
 	//testNet = "http://192.168.0.189:20336"
 
 	sdk.NewRpcClient().SetAddress(testNet)
 
 	testNet = "http://172.168.3.73:20339"
-	//testNet = "http://127.0.0.1:20339"
+	testNet = "http://127.0.0.1:20339"
 	//testNet = "http://192.168.0.189:20339"
 	ethClient, err := ethclient.Dial(testNet)
+	checkErr(err)
 
 	if false {
 		createWallet(sdk)
@@ -73,12 +74,14 @@ func main() {
 	}
 
 	oep4Addr, erc20Addr := deployContract(sdk, ethClient, acct, testPrivateKey)
+	log.Infof("oep4Addr: %s", oep4Addr.ToHexString())
 	initContract(sdk, acct, oep4Addr)
 
 	toAddr, _ := common.AddressFromBase58("AHNtib2FYwhdTQZc9oKKrR3M2MyYH8NrL9")
 
+	exit := make(chan bool, 0)
 	checkTxQueue := make(chan CheckTx, 10000)
-	startCheckTxTask(sdk, checkTxQueue, true)
+	startCheckTxTask(sdk, checkTxQueue, true, exit)
 
 	// 正常交易压力测试
 	txNums := 1
@@ -86,27 +89,11 @@ func main() {
 		testStress(sdk, acct, toAddr, oep4Addr, txNums, ethClient, testEthAddr, erc20Addr, checkTxQueue)
 	}
 
-
 	// 相同的txNonce交易  交易手续费大的应该成功
-	if true {
+	if false {
 		testNonce(ethClient, testEthAddr, erc20Addr, common2.Address(toAddr), checkTxQueue, txNums)
 	}
-	waitToExit()
-}
-
-
-type CheckTx struct {
-	txType      string
-	txHash      common.Uint256
-	expectState byte
-}
-
-func NewCheckTx(txType string, txHash common.Uint256, expectState byte) CheckTx {
-	return CheckTx{
-		txType:      txType,
-		txHash:      txHash,
-		expectState: expectState,
-	}
+	<-exit
 }
 
 func testStress(sdk *ontology_go_sdk.OntologySdk, acct *ontology_go_sdk.Account, toAddr, oep4Addr common.Address,
@@ -139,10 +126,24 @@ func testNonce(ethClient *ethclient.Client, testEthAddr, erc20Addr, toAddr commo
 		log.Infof("erc20Tx2:", thash.ToHexString())
 		checkErr(err)
 		checkTxQueue <- NewCheckTx("erc20", common.Uint256(erc20Tx.Hash()), 0)
-		err = ethClient.SendTransaction(context.Background(), erc20Tx2)
-		checkErr(err)
-		checkTxQueue <- NewCheckTx("erc20", common.Uint256(erc20Tx2.Hash()), 1)
+		//err = ethClient.SendTransaction(context.Background(), erc20Tx2)
+		//checkErr(err)
+		//checkTxQueue <- NewCheckTx("erc20", common.Uint256(erc20Tx2.Hash()), 1)
 		txNonce++
+	}
+}
+
+type CheckTx struct {
+	txType      string
+	txHash      common.Uint256
+	expectState byte
+}
+
+func NewCheckTx(txType string, txHash common.Uint256, expectState byte) CheckTx {
+	return CheckTx{
+		txType:      txType,
+		txHash:      txHash,
+		expectState: expectState,
 	}
 }
 
@@ -179,12 +180,9 @@ func createWallet(sdk *ontology_go_sdk.OntologySdk) {
 	wallet.Save()
 }
 
-func startCheckTxTask(sdk *ontology_go_sdk.OntologySdk, checkTxQueue chan CheckTx, support bool) {
+func startCheckTxTask(sdk *ontology_go_sdk.OntologySdk, checkTxQueue chan CheckTx, support bool, exit chan bool) {
 	go func() {
-		i := 0
 		for checkTx := range checkTxQueue {
-			fmt.Println("******", i)
-			i++
 			// 暂时不用
 			if !support {
 				continue
@@ -209,17 +207,17 @@ func startCheckTxTask(sdk *ontology_go_sdk.OntologySdk, checkTxQueue chan CheckT
 				}
 			}
 		}
+		exit <- true
 	}()
 }
 
 func initContract(sdk *ontology_go_sdk.OntologySdk, acct *ontology_go_sdk.Account, oep4Addr common.Address) {
-	res, err := sdk.NeoVM.PreExecInvokeNeoVMContract(oep4Addr, []interface{}{"balanceOf", []interface{}{acct.Address}})
+	oo := oep4.NewOep4(oep4Addr, sdk)
+	res, err := oo.BalanceOf(acct.Address)
 	checkErr(err)
-	data, err := res.Result.ToInteger()
-	checkErr(err)
-	if data.Uint64() == 0 {
+	if res.Uint64() == 0 {
 		_, err = sdk.NeoVM.InvokeNeoVMContract(gasPrice, gasLimit, acct, acct, oep4Addr,
-			[]interface{}{"init", []interface{}{1}})
+			[]interface{}{"init", []interface{}{acct.Address}})
 		checkErr(err)
 		sdk.WaitForGenerateBlock(time.Second*40, 1)
 	}
@@ -301,8 +299,7 @@ func deployContract(sdk *ontology_go_sdk.OntologySdk, ethClient *ethclient.Clien
 
 	code, err := ethClient.CodeAt(context.Background(), ethAddr, nil)
 	if code == nil || err != nil {
-		chainId := big.NewInt(5851)
-		opts, err := bind.NewKeyedTransactorWithChainID(testPrivateKey, chainId)
+		opts, err := bind.NewKeyedTransactorWithChainID(testPrivateKey, big.NewInt(chainId))
 		opts.GasPrice = big.NewInt(int64(gasPrice))
 		opts.Nonce = big.NewInt(0)
 		opts.GasLimit = 8000000
@@ -344,7 +341,9 @@ func loadContract(filePath string) []byte {
 	if common.FileExisted(filePath) {
 		raw, err := ioutil.ReadFile(filePath)
 		checkErr(err)
-		code, err := hex.DecodeString(string(raw))
+		ss := strings.ReplaceAll(string(raw), "\n", "")
+		ss = strings.ReplaceAll(ss, " ", "")
+		code, err := hex.DecodeString(ss)
 		if err != nil {
 			return raw
 		} else {
