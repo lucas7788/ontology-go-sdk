@@ -18,7 +18,7 @@ SYMBOL = 'SYMBOL'
 DECIMALS = 6
 FACTOR = 1000000
 TotalSupply = 1000000000
-Admin = Base58ToAddress("ARGK44mXXZfU6vcdSfFKMzjaabWxyog1qb")
+Admin = Base58ToAddress("ANwj1AC4gUarPbw8sD3AenazMDv1gXFtqr")
 ZERO_ADDRESS = bytearray(b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00')
 
 BALANCE_PREFIX = bytearray(b'\x01')

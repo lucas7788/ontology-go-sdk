@@ -1,13 +1,16 @@
 package main
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"encoding/hex"
+	"fmt"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	common2 "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethclient"
 	ontology_go_sdk "github.com/ontio/ontology-go-sdk"
 	"github.com/ontio/ontology/cmd/utils"
 	"github.com/ontio/ontology/common"
@@ -17,7 +20,10 @@ import (
 	"io/ioutil"
 	"math/big"
 	"math/rand"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -25,74 +31,146 @@ const WingABI = "[{\"inputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"c
 
 var gasPrice, gasLimit uint64
 var testPrivateKey *ecdsa.PrivateKey
+var chainId int64
 
-type CheckTx struct {
-	txHash      common.Uint256
-	expectState byte
-}
-
-func NewCheckTx(txHash common.Uint256, expectState byte) CheckTx {
-	return CheckTx{
-		txHash:      txHash,
-		expectState: expectState,
-	}
-}
 
 func main() {
+	chainId = 12345
+	gasPrice = 2500
+	gasLimit = 20400000
 	sdk := ontology_go_sdk.NewOntologySdk()
-	sdk.NewRpcClient().SetAddress("http://127.0.0.1:20336")
+	testNet := "http://172.168.3.73:20336"
+	//testNet = "http://127.0.0.1:20336"
+	//testNet = "http://192.168.0.189:20336"
+
+	sdk.NewRpcClient().SetAddress(testNet)
+
+	testNet = "http://172.168.3.73:20339"
+	//testNet = "http://127.0.0.1:20339"
+	//testNet = "http://192.168.0.189:20339"
+	ethClient, err := ethclient.Dial(testNet)
+
 	if false {
 		createWallet(sdk)
 		return
 	}
 	wallet, err := sdk.OpenWallet("txpool.dat")
 	checkErr(err)
-	acct, err := wallet.GetAccountByAddress("AWCgtHfJywHRCBCJUXix3XH2xJAhPYYU6j", []byte("111111"))
+	acct, err := wallet.GetAccountByAddress("ANwj1AC4gUarPbw8sD3AenazMDv1gXFtqr", []byte("server"))
 	checkErr(err)
 	testPrivateKeyStr := "59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
-	testPrivateKey, err := crypto.HexToECDSA(testPrivateKeyStr)
+	testPrivateKey, err = crypto.HexToECDSA(testPrivateKeyStr)
 	checkErr(err)
-	oep4Addr, erc20Addr := deployContract(sdk, acct, testPrivateKey)
+	testEthAddr := crypto.PubkeyToAddress(testPrivateKey.PublicKey)
+	testEthAddrOnt := common.Address(testEthAddr)
+	log.Infof("testEthAddrOnt: %s", testEthAddrOnt.ToBase58())
+	if false {
+		//peiwen, _ := common.AddressFromBase58("AVTh2TX6vBVhSPvNoBhG7rqPkvUVWb2WDS")
+		txhash, err := sdk.Native.Ong.Transfer(gasPrice, gasLimit, acct, acct, common.Address(testEthAddr), 10000*1000000000)
+		checkErr(err)
+		fmt.Println(txhash.ToHexString())
+		return
+	}
+
+	oep4Addr, erc20Addr := deployContract(sdk, ethClient, acct, testPrivateKey)
 	initContract(sdk, acct, oep4Addr)
 
-	toAddr, _ := common.AddressFromBase58("ASZVKmGCjMJhirNsh7ENyGGXicEPECfcmy")
+	toAddr, _ := common.AddressFromBase58("AHNtib2FYwhdTQZc9oKKrR3M2MyYH8NrL9")
 
 	checkTxQueue := make(chan CheckTx, 10000)
-	startCheckTxTask(sdk, checkTxQueue, false)
+	startCheckTxTask(sdk, checkTxQueue, true)
 
 	// 正常交易压力测试
-	l := 10
-	oep4Tx := genOep4Tx(sdk, acct, toAddr, oep4Addr, l)
-	txNonce := 1
-	erc20Txs := genErc20TransferTxs(l, txNonce, erc20Addr, ontAddrToEthAddr(toAddr))
-	txNonce += l
-	for i := 0; i < l; i++ {
-		txHash, err := sdk.SendTransaction(oep4Tx[i])
-		checkErr(err)
-		checkTxQueue <- NewCheckTx(txHash, 1)
-		txHash, err = sdk.SendTransaction(erc20Txs[i])
-		checkErr(err)
-		checkTxQueue <- NewCheckTx(txHash, 1)
+	txNums := 1
+	if true {
+		testStress(sdk, acct, toAddr, oep4Addr, txNums, ethClient, testEthAddr, erc20Addr, checkTxQueue)
 	}
+
+
 	// 相同的txNonce交易  交易手续费大的应该成功
+	if true {
+		testNonce(ethClient, testEthAddr, erc20Addr, common2.Address(toAddr), checkTxQueue, txNums)
+	}
+	waitToExit()
+}
+
+
+type CheckTx struct {
+	txType      string
+	txHash      common.Uint256
+	expectState byte
+}
+
+func NewCheckTx(txType string, txHash common.Uint256, expectState byte) CheckTx {
+	return CheckTx{
+		txType:      txType,
+		txHash:      txHash,
+		expectState: expectState,
+	}
+}
+
+func testStress(sdk *ontology_go_sdk.OntologySdk, acct *ontology_go_sdk.Account, toAddr, oep4Addr common.Address,
+	l int, ethClient *ethclient.Client, testEthAddr, erc20Addr common2.Address, checkTxQueue chan CheckTx) {
+	oep4Txs := genOep4Tx(sdk, acct, toAddr, oep4Addr, l)
+	txNonce := getTxNonce(ethClient, testEthAddr)
+	log.Infof("txNonce: %d", txNonce)
+	erc20Txs := genErc20TransferTxs(l, txNonce, erc20Addr, ontAddrToEthAddr(toAddr))
+
 	for i := 0; i < l; i++ {
-		erc20Tx := genErc20TransferTx(txNonce, erc20Addr, ontAddrToEthAddr(toAddr), big.NewInt(1000))
-		erc20Tx2 := genErc20TransferTx(txNonce, erc20Addr, ontAddrToEthAddr(toAddr), big.NewInt(2000))
-		erc20Tx2.GasPrice = erc20Tx.GasPrice + 10
-		txHash, err := sdk.SendTransaction(erc20Tx)
+		txHash, err := sdk.SendTransaction(oep4Txs[i])
 		checkErr(err)
-		checkTxQueue <- NewCheckTx(txHash, 0)
-		txHash, err = sdk.SendTransaction(erc20Tx2)
+		checkTxQueue <- NewCheckTx("oep4", txHash, 1)
+		err = ethClient.SendTransaction(context.Background(), erc20Txs[i])
 		checkErr(err)
-		checkTxQueue <- NewCheckTx(txHash, 1)
+		checkTxQueue <- NewCheckTx("erc20", common.Uint256(erc20Txs[i].Hash()), 1)
+	}
+}
+
+func testNonce(ethClient *ethclient.Client, testEthAddr, erc20Addr, toAddr common2.Address, checkTxQueue chan CheckTx, l int) {
+	txNonce := getTxNonce(ethClient, testEthAddr)
+	log.Infof("txNonce: %d", txNonce)
+	for i := 0; i < l; i++ {
+		erc20Tx := genErc20TransferTx(txNonce, int64(gasPrice), erc20Addr, toAddr, big.NewInt(1000))
+		erc20Tx2 := genErc20TransferTx(txNonce, int64(gasPrice+10), erc20Addr, toAddr, big.NewInt(2000))
+		thash := common.Uint256(erc20Tx.Hash())
+		log.Infof("erc20Tx:", thash.ToHexString())
+		err := ethClient.SendTransaction(context.Background(), erc20Tx)
+		thash = common.Uint256(erc20Tx2.Hash())
+		log.Infof("erc20Tx2:", thash.ToHexString())
+		checkErr(err)
+		checkTxQueue <- NewCheckTx("erc20", common.Uint256(erc20Tx.Hash()), 0)
+		err = ethClient.SendTransaction(context.Background(), erc20Tx2)
+		checkErr(err)
+		checkTxQueue <- NewCheckTx("erc20", common.Uint256(erc20Tx2.Hash()), 1)
 		txNonce++
 	}
 }
 
-func createWallet(sdk *ontology_go_sdk.OntologySdk) {
-	wallet, err := sdk.CreateWallet("txpool.dat")
+func getTxNonce(ethClient *ethclient.Client, addr common2.Address) uint64 {
+	txNonce, err := ethClient.PendingNonceAt(context.Background(), addr)
 	checkErr(err)
-	pwd := []byte("111111")
+	return txNonce
+}
+
+func waitToExit() {
+	exit := make(chan bool, 0)
+	sc := make(chan os.Signal, 1)
+	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	go func() {
+		for sig := range sc {
+			log.Infof("received exit signal: %v.", sig.String())
+
+			close(exit)
+			break
+		}
+	}()
+	<-exit
+}
+
+func createWallet(sdk *ontology_go_sdk.OntologySdk) {
+	wallet, err := sdk.OpenWallet("txpool.dat")
+	checkErr(err)
+	pwd := []byte("server")
 	for i := 0; i < 2; i++ {
 		acct, err := wallet.NewDefaultSettingAccount(pwd)
 		checkErr(err)
@@ -103,7 +181,10 @@ func createWallet(sdk *ontology_go_sdk.OntologySdk) {
 
 func startCheckTxTask(sdk *ontology_go_sdk.OntologySdk, checkTxQueue chan CheckTx, support bool) {
 	go func() {
+		i := 0
 		for checkTx := range checkTxQueue {
+			fmt.Println("******", i)
+			i++
 			// 暂时不用
 			if !support {
 				continue
@@ -112,14 +193,17 @@ func startCheckTxTask(sdk *ontology_go_sdk.OntologySdk, checkTxQueue chan CheckT
 				evt, err := sdk.GetSmartContractEvent(checkTx.txHash.ToHexString())
 				if evt != nil {
 					if evt.State != checkTx.expectState {
+						log.Infof("expect state: %d, actual state: %d", checkTx.expectState, evt.State)
 						panic(checkTx.txHash.ToHexString())
 					} else {
+						log.Infof("check tx success,txType: %s, txhash: %s", checkTx.txType, checkTx.txHash.ToHexString())
 						break
 					}
 				} else {
 					if err != nil {
-						log.Errorf("txhash: %s, err: %s", checkTx.txHash.ToHexString(), err)
+						log.Errorf("txType: %s, txhash: %s, err: %s", checkTx.txType, checkTx.txHash.ToHexString(), err)
 					}
+					log.Infof("wait tx, txType: %s, txhash: %s", checkTx.txType, checkTx.txHash.ToHexString())
 					time.Sleep(3 * time.Second)
 					continue
 				}
@@ -129,45 +213,46 @@ func startCheckTxTask(sdk *ontology_go_sdk.OntologySdk, checkTxQueue chan CheckT
 }
 
 func initContract(sdk *ontology_go_sdk.OntologySdk, acct *ontology_go_sdk.Account, oep4Addr common.Address) {
-	gasPrice := uint64(0)
-	gasLimit := uint64(20000)
-	_, err := sdk.NeoVM.InvokeNeoVMContract(gasPrice, gasLimit, acct, acct, oep4Addr,
-		[]interface{}{"init", []interface{}{}})
+	res, err := sdk.NeoVM.PreExecInvokeNeoVMContract(oep4Addr, []interface{}{"balanceOf", []interface{}{acct.Address}})
 	checkErr(err)
-	sdk.WaitForGenerateBlock(time.Second*40, 1)
+	data, err := res.Result.ToInteger()
+	checkErr(err)
+	if data.Uint64() == 0 {
+		_, err = sdk.NeoVM.InvokeNeoVMContract(gasPrice, gasLimit, acct, acct, oep4Addr,
+			[]interface{}{"init", []interface{}{1}})
+		checkErr(err)
+		sdk.WaitForGenerateBlock(time.Second*40, 1)
+	}
 }
 
 func ontAddrToEthAddr(ontAddr common.Address) common2.Address {
 	return common2.BytesToAddress(ontAddr[:])
 }
 
-func genErc20TransferTxs(l int, txNonce int, contractAddr common2.Address, toAddr common2.Address) []*types2.MutableTransaction {
-	erc20Txs := make([]*types2.MutableTransaction, 0)
+func genErc20TransferTxs(l int, txNonce uint64, contractAddr common2.Address, toAddr common2.Address) []*types.Transaction {
+	erc20Txs := make([]*types.Transaction, 0)
 	rand.Seed(time.Now().Unix())
 	for i := 0; i < l; i++ {
 		amt := rand.Int63n(10000)
-		erc20Tx := genErc20TransferTx(txNonce, contractAddr, toAddr, big.NewInt(amt))
+		erc20Tx := genErc20TransferTx(txNonce, int64(gasPrice), contractAddr, toAddr, big.NewInt(amt))
 		erc20Txs = append(erc20Txs, erc20Tx)
 		txNonce++
 	}
 	return erc20Txs
 }
-func genErc20TransferTx(txNonce int, contractAddr common2.Address, toAddr common2.Address, amt *big.Int) *types2.MutableTransaction {
-	erc20Tx, err := GenEVMTx(txNonce, contractAddr, "transfer", toAddr, amt)
+
+func genErc20TransferTx(txNonce uint64, gasPrice int64, contractAddr common2.Address, toAddr common2.Address, amt *big.Int) *types.Transaction {
+	erc20Tx, err := GenEVMTx(txNonce, gasPrice, contractAddr, "transfer", toAddr, amt)
 	checkErr(err)
-	tx, err := types2.TransactionFromEIP155(erc20Tx)
-	checkErr(err)
-	mutTx, err := tx.IntoMutable()
-	checkErr(err)
-	return mutTx
+	return erc20Tx
 }
 
-func GenEVMTx(nonce int, contractAddr common2.Address, method string, params ...interface{}) (*types.Transaction, error) {
-	chainId := big.NewInt(5851)
+func GenEVMTx(nonce uint64, gasPrice int64, contractAddr common2.Address, method string, params ...interface{}) (*types.Transaction, error) {
+	chainId := big.NewInt(chainId)
 	opts, err := bind.NewKeyedTransactorWithChainID(testPrivateKey, chainId)
-	opts.GasPrice = big.NewInt(1000000000) // 1Gwei
+	opts.GasPrice = big.NewInt(gasPrice) // 1Gwei
 	opts.Nonce = big.NewInt(int64(nonce))
-	opts.GasLimit = 8000000
+	opts.GasLimit = gasLimit
 
 	checkErr(err)
 	parsed, err := abi.JSON(strings.NewReader(WingABI))
@@ -194,31 +279,41 @@ func genOep4Tx(sdk *ontology_go_sdk.OntologySdk, acct *ontology_go_sdk.Account, 
 	return oep4Txs
 }
 
-func deployContract(sdk *ontology_go_sdk.OntologySdk, acct *ontology_go_sdk.Account, testPrivateKey *ecdsa.PrivateKey) (common.Address, common2.Address) {
-	oep4Code := loadContract("./test-contract/oep4_example.py")
-	erc20Code := loadContract("./test-contract/wing_eth.evm")
-	tx, err := NewDeployNeoContract(sdk, acct, oep4Code)
-	checkErr(err)
-	mutTx, err := tx.IntoMutable()
-	checkErr(err)
-	txHash, err := sdk.SendTransaction(mutTx)
-	log.Infof("deploy oep4 txHash: %s", txHash.ToHexString())
+func deployContract(sdk *ontology_go_sdk.OntologySdk, ethClient *ethclient.Client, acct *ontology_go_sdk.Account,
+	testPrivateKey *ecdsa.PrivateKey) (common.Address, common2.Address) {
+	oep4Code := loadContract("examples/txPool/test-contract/WingToken.avm")
+	erc20Code := loadContract("examples/txPool/test-contract/wing_eth.evm")
+
 	oep4Addr := common.AddressFromVmCode(oep4Code)
-	chainId := big.NewInt(5851)
-	opts, err := bind.NewKeyedTransactorWithChainID(testPrivateKey, chainId)
-	opts.GasPrice = big.NewInt(0)
-	opts.Nonce = big.NewInt(0)
-	opts.GasLimit = 8000000
-	ethTx, err := NewDeployEvmContract(opts, erc20Code, WingABI)
-	checkErr(err)
-	tx, err = types2.TransactionFromEIP155(ethTx)
-	checkErr(err)
-	mutTx, err = tx.IntoMutable()
-	checkErr(err)
-	txHash, err = sdk.SendTransaction(mutTx)
-	log.Infof("deploy erc20 txHash: %s", txHash.ToHexString())
+	pc, err := sdk.GetSmartContract(oep4Addr.ToHexString())
+	if pc == nil || err != nil {
+		tx, err := NewDeployNeoContract(sdk, acct, oep4Code)
+		checkErr(err)
+		mutTx, err := tx.IntoMutable()
+		checkErr(err)
+		txHash, err := sdk.SendTransaction(mutTx)
+		checkErr(err)
+		log.Infof("deploy oep4 txHash: %s", txHash.ToHexString())
+		sdk.WaitForGenerateBlock(time.Second*40, 1)
+	}
 	testEthAddr := crypto.PubkeyToAddress(testPrivateKey.PublicKey)
 	ethAddr := crypto.CreateAddress(testEthAddr, 0)
+
+	code, err := ethClient.CodeAt(context.Background(), ethAddr, nil)
+	if code == nil || err != nil {
+		chainId := big.NewInt(5851)
+		opts, err := bind.NewKeyedTransactorWithChainID(testPrivateKey, chainId)
+		opts.GasPrice = big.NewInt(int64(gasPrice))
+		opts.Nonce = big.NewInt(0)
+		opts.GasLimit = 8000000
+		ethTx, err := NewDeployEvmContract(opts, erc20Code, WingABI)
+		checkErr(err)
+		err = ethClient.SendTransaction(context.Background(), ethTx)
+		checkErr(err)
+		txHash := common.Uint256(ethTx.Hash())
+		log.Infof("deploy erc20 txHash: %s", txHash.ToHexString())
+		sdk.WaitForGenerateBlock(time.Second*40, 1)
+	}
 	return oep4Addr, ethAddr
 }
 
@@ -235,7 +330,7 @@ func NewDeployEvmContract(opts *bind.TransactOpts, code []byte, jsonABI string, 
 }
 
 func NewDeployNeoContract(sdk *ontology_go_sdk.OntologySdk, signer *ontology_go_sdk.Account, code []byte) (*types2.Transaction, error) {
-	mutable, err := utils.NewDeployCodeTransaction(0, 100000000, code, payload.NEOVM_TYPE, "name", "version",
+	mutable, err := utils.NewDeployCodeTransaction(gasPrice, gasLimit, code, payload.NEOVM_TYPE, "name", "version",
 		"author", "email", "desc")
 	if err != nil {
 		return nil, err
