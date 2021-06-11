@@ -33,12 +33,13 @@ var transferAmt, txNums, acctNum int
 var ongDecimal = 1000000000
 
 func main() {
+
 	chainId = 12345
 	gasPrice = 500
-	gasLimit = 20800000
-	txNums = 10       // 压测交易数量
-	acctNum = 10       // 随机生成的账户数量
-	transferAmt = 1000 // oep4 和 erc20 转账的数量
+	gasLimit = 210000
+	txNums = 10000    // 压测交易数量
+	acctNum = 2       // 随机生成的账户数量
+	transferAmt = 100 // oep4 和 erc20 转账的数量
 
 	sdk := ontology_go_sdk.NewOntologySdk()
 	testNet := "http://172.168.3.73:30336"
@@ -53,10 +54,6 @@ func main() {
 	ethClient, err := ethclient.Dial(testNet)
 	checkErr(err)
 
-	if false {
-		createWallet(sdk)
-		return
-	}
 	wallet, err := sdk.OpenWallet("wallet.dat")
 	checkErr(err)
 	acct, err := wallet.GetDefaultAccount([]byte("server"))
@@ -67,7 +64,7 @@ func main() {
 	testEthAddr := crypto.PubkeyToAddress(testPrivateKey.PublicKey)
 	testEthAddrOnt := common.Address(testEthAddr)
 	log.Infof("testEthAddrOnt: %s", testEthAddrOnt.ToBase58())
-	transferOng(sdk, acct, common.Address(testEthAddr), uint64(txNums*ongDecimal*10/100))
+	transferOng(sdk, acct, common.Address(testEthAddr), uint64(txNums*ongDecimal*5/100/acctNum))
 	sdk.WaitForGenerateBlock(time.Second*40, 1)
 
 	oep4Addr, erc20Addr := deployContract(sdk, ethClient, acct, testPrivateKey)
@@ -78,7 +75,7 @@ func main() {
 	startCheckTxTask(sdk, checkTxQueue, true, exit)
 
 	accts := genAccts(sdk, wallet, acctNum, acct, oep4Addr, txNums)
-	ethKeys := genEthPrivateKey(acctNum, testPrivateKey, ethClient, erc20Addr, sdk, txNums)
+	ethKeys := genEthPrivateKey(acctNum, testPrivateKey, ethClient, erc20Addr, sdk, acct, txNums)
 
 	// 正常交易压力测试
 	if true {
@@ -102,12 +99,14 @@ func testStress(sdk *ontology_go_sdk.OntologySdk, acct *ontology_go_sdk.Account,
 	erc20Txs := genErc20TransferTxs(txNum, erc20Addr, ethKeys)
 
 	for i := 0; i < txNum; i++ {
+		log.Infof("testStress i: %d start", i)
 		txHash, err := sdk.SendTransaction(oep4Txs[i])
 		checkErr(err)
 		checkTxQueue <- NewCheckTx("oep4", txHash, 1)
 		err = ethClient.SendTransaction(context.Background(), erc20Txs[i])
 		checkErr(err)
 		checkTxQueue <- NewCheckTx("erc20", common.Uint256(erc20Txs[i].Hash()), 1)
+		log.Infof("testStress i: %d end", i)
 	}
 }
 
@@ -142,7 +141,7 @@ func genAccts(sdk *ontology_go_sdk.OntologySdk, wallet *ontology_go_sdk.Wallet, 
 	oep4Addr common.Address, txNums int) []*ontology_go_sdk.Account {
 	accts := make([]*ontology_go_sdk.Account, 0)
 	accts = append(accts, acct)
-	unit := uint64(txNums * 10 / 100)
+	unit := uint64(txNums * ongDecimal * 2 * 5 / 100)
 	unit = unit / uint64(acctNum)
 	token := oep4.NewOep4(oep4Addr, sdk)
 	oBalance, err := token.BalanceOf(acct.Address)
@@ -152,16 +151,20 @@ func genAccts(sdk *ontology_go_sdk.OntologySdk, wallet *ontology_go_sdk.Wallet, 
 	for i := 0; i < acctNum; i++ {
 		acct2, err = wallet.NewDefaultSettingAccount([]byte("111111"))
 		checkErr(err)
-		if unit > 0 {
-			transferOng(sdk, acct, acct2.Address, unit)
-		}
+		log.Infof("genAccts uint: %d", unit)
+		transferOng(sdk, acct, acct2.Address, unit)
 		if unit2.Uint64() > 0 {
 			_, err = token.Transfer(acct, acct2.Address, unit2, acct, gasPrice, gasLimit)
 			checkErr(err)
 		}
-		accts = append(accts, acct)
+		accts = append(accts, acct2)
 	}
 	sdk.WaitForGenerateBlock(time.Second*40, 2)
+	for _, a := range accts {
+		ba, err := sdk.Native.Ong.BalanceOf(a.Address)
+		checkErr(err)
+		log.Infof("ba: %d", ba)
+	}
 	return accts
 }
 
@@ -177,7 +180,7 @@ type EthKey struct {
 }
 
 func genEthPrivateKey(acctNum int, first *ecdsa.PrivateKey, ethClient *ethclient.Client, erc20Addr common2.Address,
-	sdk *ontology_go_sdk.OntologySdk, txNums int) []*EthKey {
+	sdk *ontology_go_sdk.OntologySdk, acct *ontology_go_sdk.Account, txNums int) []*EthKey {
 	ks := make([]*EthKey, 0)
 	addr := crypto.PubkeyToAddress(first.PublicKey)
 	nonce, err := ethClient.PendingNonceAt(context.Background(), addr)
@@ -189,15 +192,15 @@ func genEthPrivateKey(acctNum int, first *ecdsa.PrivateKey, ethClient *ethclient
 	}
 	ks = append(ks, firstKey)
 
-	unit := txNums * ongDecimal * 10 / 100
+	unit := txNums * ongDecimal * 2 * 5 / 100
 	unit = unit / acctNum
 
+	log.Infof("genEthPrivateKey, unit: %d", unit)
 	for i := 0; i < acctNum; i++ {
 		k, err := crypto.GenerateKey()
 		checkErr(err)
 		addr = crypto.PubkeyToAddress(k.PublicKey)
-		transferEth(ethClient, first, firstKey.nonce, addr, big.NewInt(int64(unit)))
-		firstKey.nonce++
+		transferOng(sdk, acct, common.Address(addr), uint64(unit))
 		tx := genErc20TransferTx(int64(gasPrice), erc20Addr, firstKey, addr, big.NewInt(int64(unit)))
 		err = ethClient.SendTransaction(context.Background(), tx)
 		checkErr(err)
@@ -211,6 +214,11 @@ func genEthPrivateKey(acctNum int, first *ecdsa.PrivateKey, ethClient *ethclient
 		})
 	}
 	sdk.WaitForGenerateBlock(time.Second*40, 2)
+	for _, a := range ks {
+		ba, err := sdk.Native.Ong.BalanceOf(common.Address(a.addr))
+		checkErr(err)
+		log.Infof("****ba: %d", ba)
+	}
 	return ks
 }
 
@@ -423,7 +431,7 @@ func NewDeployEvmContract(opts *bind.TransactOpts, code []byte, jsonABI string, 
 }
 
 func NewDeployNeoContract(sdk *ontology_go_sdk.OntologySdk, signer *ontology_go_sdk.Account, code []byte) (*types2.Transaction, error) {
-	mutable, err := utils.NewDeployCodeTransaction(gasPrice, gasLimit, code, payload.NEOVM_TYPE, "name", "version",
+	mutable, err := utils.NewDeployCodeTransaction(gasPrice, gasLimit*100, code, payload.NEOVM_TYPE, "name", "version",
 		"author", "email", "desc")
 	if err != nil {
 		return nil, err
