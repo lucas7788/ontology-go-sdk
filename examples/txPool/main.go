@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"encoding/hex"
-	"fmt"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	common2 "github.com/ethereum/go-ethereum/common"
@@ -30,19 +29,25 @@ const WingABI = "[{\"inputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"c
 var gasPrice, gasLimit uint64
 var testPrivateKey *ecdsa.PrivateKey
 var chainId int64
+var transferAmt, txNums, acctNum int
+var ongDecimal = 1000000000
 
 func main() {
 	chainId = 12345
 	gasPrice = 500
 	gasLimit = 20800000
+	txNums = 10       // 压测交易数量
+	acctNum = 10       // 随机生成的账户数量
+	transferAmt = 1000 // oep4 和 erc20 转账的数量
+
 	sdk := ontology_go_sdk.NewOntologySdk()
-	testNet := "http://172.168.3.73:20336"
+	testNet := "http://172.168.3.73:30336"
 	//testNet = "http://127.0.0.1:20336"
 	//testNet = "http://192.168.0.189:20336"
 
 	sdk.NewRpcClient().SetAddress(testNet)
 
-	testNet = "http://172.168.3.73:20339"
+	testNet = "http://172.168.3.73:30339"
 	//testNet = "http://127.0.0.1:20339"
 	//testNet = "http://192.168.0.189:20339"
 	ethClient, err := ethclient.Dial(testNet)
@@ -52,43 +57,30 @@ func main() {
 		createWallet(sdk)
 		return
 	}
-	wallet, err := sdk.OpenWallet("txpool.dat")
+	wallet, err := sdk.OpenWallet("wallet.dat")
 	checkErr(err)
-	acct, err := wallet.GetAccountByAddress("ANwj1AC4gUarPbw8sD3AenazMDv1gXFtqr", []byte("server"))
+	acct, err := wallet.GetDefaultAccount([]byte("server"))
 	checkErr(err)
 	testPrivateKeyStr := "59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
 	testPrivateKey, err = crypto.HexToECDSA(testPrivateKeyStr)
 	checkErr(err)
 	testEthAddr := crypto.PubkeyToAddress(testPrivateKey.PublicKey)
 	testEthAddrOnt := common.Address(testEthAddr)
-
 	log.Infof("testEthAddrOnt: %s", testEthAddrOnt.ToBase58())
-	if false {
-		wallet2,err := sdk.OpenWallet("rongyi.dat")
-		checkErr(err)
-		rongyi,err := wallet2.GetAccountByAddress("ANwj1AC4gUarPbw8sD3AenazMDv1gXFtqr", []byte("server"))
-		checkErr(err)
-		//peiwen, _ := common.AddressFromBase58("AVTh2TX6vBVhSPvNoBhG7rqPkvUVWb2WDS")
-		//txhash, err := sdk.Native.Ong.Transfer(gasPrice, gasLimit, rongyi, rongyi, common.Address(testEthAddr), 10000*1000000000)
-		txhash, err := sdk.Native.Ong.Transfer(gasPrice, gasLimit, rongyi, rongyi, acct.Address, 10000*1000000000)
-		checkErr(err)
-		fmt.Println(txhash.ToHexString())
-		return
-	}
+	transferOng(sdk, acct, common.Address(testEthAddr), uint64(txNums*ongDecimal*10/100))
+	sdk.WaitForGenerateBlock(time.Second*40, 1)
 
 	oep4Addr, erc20Addr := deployContract(sdk, ethClient, acct, testPrivateKey)
-	log.Infof("oep4Addr: %s", oep4Addr.ToHexString())
+	log.Infof("oep4Addr: %s, erc20Addr: %s", oep4Addr.ToHexString(), erc20Addr.String())
 
 	exit := make(chan bool, 0)
 	checkTxQueue := make(chan CheckTx, 10000)
 	startCheckTxTask(sdk, checkTxQueue, true, exit)
 
-	acctNum := 10
-	accts := genAccts(sdk, wallet, acctNum, acct, oep4Addr)
-	ethKeys := genEthPrivateKey(acctNum, testPrivateKey, ethClient, erc20Addr, sdk)
+	accts := genAccts(sdk, wallet, acctNum, acct, oep4Addr, txNums)
+	ethKeys := genEthPrivateKey(acctNum, testPrivateKey, ethClient, erc20Addr, sdk, txNums)
 
 	// 正常交易压力测试
-	txNums := 10
 	if true {
 		testStress(sdk, acct, accts, oep4Addr, txNums, ethClient, ethKeys, erc20Addr, checkTxQueue)
 	}
@@ -130,8 +122,8 @@ func testNonce(ethClient *ethclient.Client, erc20Addr common2.Address, ethKeys [
 		ind2 = (i + 1) % l
 		from = ethKeys[ind]
 		toAddr = ethKeys[ind2].addr
-		erc20Tx := genErc20TransferTx(int64(gasPrice), erc20Addr, from, toAddr, big.NewInt(1000))
-		erc20Tx2 := genErc20TransferTx(int64(gasPrice+10), erc20Addr, from, toAddr, big.NewInt(2000))
+		erc20Tx := genErc20TransferTx(int64(gasPrice), erc20Addr, from, toAddr, big.NewInt(int64(transferAmt)))
+		erc20Tx2 := genErc20TransferTx(int64(gasPrice+10), erc20Addr, from, toAddr, big.NewInt(int64(transferAmt+1)))
 		thash := common.Uint256(erc20Tx.Hash())
 		log.Infof("erc20Tx:", thash.ToHexString())
 		err := ethClient.SendTransaction(context.Background(), erc20Tx)
@@ -146,23 +138,22 @@ func testNonce(ethClient *ethclient.Client, erc20Addr common2.Address, ethKeys [
 	}
 }
 
-func genAccts(sdk *ontology_go_sdk.OntologySdk, wallet *ontology_go_sdk.Wallet, acctNum int, acct *ontology_go_sdk.Account, oep4Addr common.Address) []*ontology_go_sdk.Account {
+func genAccts(sdk *ontology_go_sdk.OntologySdk, wallet *ontology_go_sdk.Wallet, acctNum int, acct *ontology_go_sdk.Account,
+	oep4Addr common.Address, txNums int) []*ontology_go_sdk.Account {
 	accts := make([]*ontology_go_sdk.Account, 0)
 	accts = append(accts, acct)
-	balance, err := sdk.Native.Ong.BalanceOf(acct.Address)
-	checkErr(err)
-	unit := balance / uint64(acctNum*10)
+	unit := uint64(txNums * 10 / 100)
+	unit = unit / uint64(acctNum)
 	token := oep4.NewOep4(oep4Addr, sdk)
 	oBalance, err := token.BalanceOf(acct.Address)
 	checkErr(err)
-	unit2 := new(big.Int).Div(oBalance, big.NewInt(int64(acctNum*10)))
+	unit2 := new(big.Int).Div(oBalance, big.NewInt(int64(acctNum*100)))
 	var acct2 *ontology_go_sdk.Account
 	for i := 0; i < acctNum; i++ {
 		acct2, err = wallet.NewDefaultSettingAccount([]byte("111111"))
 		checkErr(err)
 		if unit > 0 {
-			_, err = sdk.Native.Ong.Transfer(gasPrice, gasLimit, acct, acct, acct2.Address, unit)
-			checkErr(err)
+			transferOng(sdk, acct, acct2.Address, unit)
 		}
 		if unit2.Uint64() > 0 {
 			_, err = token.Transfer(acct, acct2.Address, unit2, acct, gasPrice, gasLimit)
@@ -174,13 +165,19 @@ func genAccts(sdk *ontology_go_sdk.OntologySdk, wallet *ontology_go_sdk.Wallet, 
 	return accts
 }
 
+func transferOng(sdk *ontology_go_sdk.OntologySdk, from *ontology_go_sdk.Account, to common.Address, amt uint64) {
+	_, err := sdk.Native.Ong.Transfer(gasPrice, gasLimit, from, from, to, amt)
+	checkErr(err)
+}
+
 type EthKey struct {
 	key   *ecdsa.PrivateKey
 	addr  common2.Address
 	nonce uint64
 }
 
-func genEthPrivateKey(acctNum int, first *ecdsa.PrivateKey, ethClient *ethclient.Client, erc20Addr common2.Address, sdk *ontology_go_sdk.OntologySdk) []*EthKey {
+func genEthPrivateKey(acctNum int, first *ecdsa.PrivateKey, ethClient *ethclient.Client, erc20Addr common2.Address,
+	sdk *ontology_go_sdk.OntologySdk, txNums int) []*EthKey {
 	ks := make([]*EthKey, 0)
 	addr := crypto.PubkeyToAddress(first.PublicKey)
 	nonce, err := ethClient.PendingNonceAt(context.Background(), addr)
@@ -191,17 +188,17 @@ func genEthPrivateKey(acctNum int, first *ecdsa.PrivateKey, ethClient *ethclient
 		nonce: nonce,
 	}
 	ks = append(ks, firstKey)
-	balance, err := ethClient.BalanceAt(context.Background(), addr, nil)
-	checkErr(err)
-	unit := new(big.Int).Div(balance, big.NewInt(int64(acctNum*100)))
+
+	unit := txNums * ongDecimal * 10 / 100
+	unit = unit / acctNum
 
 	for i := 0; i < acctNum; i++ {
 		k, err := crypto.GenerateKey()
 		checkErr(err)
 		addr = crypto.PubkeyToAddress(k.PublicKey)
-		transferEth(ethClient, first, firstKey.nonce, addr, unit)
+		transferEth(ethClient, first, firstKey.nonce, addr, big.NewInt(int64(unit)))
 		firstKey.nonce++
-		tx := genErc20TransferTx(int64(gasPrice), erc20Addr, firstKey, addr, unit)
+		tx := genErc20TransferTx(int64(gasPrice), erc20Addr, firstKey, addr, big.NewInt(int64(unit)))
 		err = ethClient.SendTransaction(context.Background(), tx)
 		checkErr(err)
 		firstKey.nonce++
@@ -306,22 +303,19 @@ func initContract(sdk *ontology_go_sdk.OntologySdk, acct *ontology_go_sdk.Accoun
 	}
 }
 
-func ontAddrToEthAddr(ontAddr common.Address) common2.Address {
-	return common2.BytesToAddress(ontAddr[:])
-}
-
 func genErc20TransferTxs(txNum int, contractAddr common2.Address, ethKeys []*EthKey) []*types.Transaction {
 	erc20Txs := make([]*types.Transaction, 0)
 	rand.Seed(time.Now().Unix())
 	l := len(ethKeys)
 	var ind, ind2 int
+	var amt int64
 	for i := 0; i < txNum; i++ {
-		amt := rand.Int63n(10000)
+		amt = 1000
 		ind = i % l
 		ind2 = (i + 1) % l
 		erc20Tx := genErc20TransferTx(int64(gasPrice), contractAddr, ethKeys[ind], ethKeys[ind2].addr, big.NewInt(amt))
 		erc20Txs = append(erc20Txs, erc20Tx)
-		ethKeys[ind2].nonce++
+		ethKeys[ind].nonce++
 	}
 	return erc20Txs
 }
@@ -361,12 +355,11 @@ func genOep4Tx(sdk *ontology_go_sdk.OntologySdk, acct *ontology_go_sdk.Account, 
 	var toAddr common.Address
 	var ind int
 	for i := 0; i < txNum; i++ {
-		amt := rand.Int63n(1000)
 		ind = i % l
 		from = accts2[ind]
 		ind = (i + 1) % l
 		toAddr = accts2[ind].Address
-		params := []interface{}{"transfer", []interface{}{from.Address, toAddr, amt}}
+		params := []interface{}{"transfer", []interface{}{from.Address, toAddr, transferAmt}}
 		tx, err := sdk.NeoVM.NewNeoVMInvokeTransaction(gasPrice, gasLimit, oep4Addr, params)
 		checkErr(err)
 		err = sdk.SignToTransaction(tx, from)
