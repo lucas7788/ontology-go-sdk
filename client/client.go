@@ -326,6 +326,18 @@ func (this *ClientMgr) GetMemPoolTxCount() (*sdkcom.MemPoolTxCount, error) {
 	return utils.GetMemPoolTxCount(data)
 }
 
+func (this *ClientMgr) GetMemPoolTxHashList() ([]common.Uint256, error) {
+	client := this.getClient()
+	if client == nil {
+		return nil, fmt.Errorf("don't have available client of ontology")
+	}
+	data, err := client.getMemPoolTxHashList(this.getNextQid())
+	if err != nil {
+		return nil, err
+	}
+	return utils.GetMemPoolTxHashList(data)
+}
+
 func (this *ClientMgr) GetVersion() (string, error) {
 	client := this.getClient()
 	if client == nil {

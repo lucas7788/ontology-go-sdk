@@ -621,6 +621,10 @@ func (this *WSClient) getMemPoolTxCount(qid string) ([]byte, error) {
 	return this.sendSyncWSRequest(qid, WS_ACTION_GET_MEM_POOL_TX_COUNT, nil)
 }
 
+func (this *WSClient) getMemPoolTxHashList(qid string) ([]byte, error) {
+	return this.sendSyncWSRequest(qid, WS_ACTION_GET_MEM_POOL_TXHASH_LIST, nil)
+}
+
 func (this *WSClient) getCurrentBlockHeight(qid string) ([]byte, error) {
 	return this.sendSyncWSRequest(qid, WS_ACTION_GET_BLOCK_HEIGHT, nil)
 }

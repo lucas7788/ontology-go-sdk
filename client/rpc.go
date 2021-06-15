@@ -162,6 +162,10 @@ func (this *RpcClient) getMemPoolTxCount(qid string) ([]byte, error) {
 	return this.sendRpcRequest(qid, RPC_GET_MEM_POOL_TX_COUNT, []interface{}{})
 }
 
+func (this *RpcClient) getMemPoolTxHashList(qid string) ([]byte, error) {
+	return this.sendRpcRequest(qid, RPC_GET_MEM_POOL_TXHASH_LIST,[]interface{}{})
+}
+
 func (this *RpcClient) getBlockHeightByTxHash(qid, txHash string) ([]byte, error) {
 	return this.sendRpcRequest(qid, RPC_GET_BLOCK_HEIGHT_BY_TX_HASH, []interface{}{txHash})
 }

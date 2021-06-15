@@ -44,6 +44,7 @@ type OntologyClient interface {
 	getCrossChainMsg(qid string, height uint32) ([]byte, error)
 	getMemPoolTxState(qid, txHash string) ([]byte, error)
 	getMemPoolTxCount(qid string) ([]byte, error)
+	getMemPoolTxHashList(qid string) ([]byte, error)
 	sendRawTransaction(qid string, tx *types.Transaction, isPreExec bool) ([]byte, error)
 	getLayer2StoreProof(qid string, key []byte) ([]byte, error)
 }
@@ -67,6 +68,7 @@ const (
 	RPC_GET_NETWORK_ID              = "getnetworkid"
 	RPC_GET_MEM_POOL_TX_COUNT       = "getmempooltxcount"
 	RPC_GET_MEM_POOL_TX_STATE       = "getmempooltxstate"
+	RPC_GET_MEM_POOL_TXHASH_LIST    = "getmempooltxhashlist"
 	RPC_GET_BLOCK_TX_HASH_BY_HEIGHT = "getblocktxsbyheight"
 	RPC_GET_BLOCK_HEIGHT_BY_TX_HASH = "getblockheightbytxhash"
 	SEND_EMERGENCY_GOV_REQ          = "sendemergencygovreq"
@@ -114,6 +116,7 @@ const (
 	GET_UNBOUNDONG        = "/api/v1/unboundong/"
 	GET_MEMPOOL_TXCOUNT   = "/api/v1/mempool/txcount"
 	GET_MEMPOOL_TXSTATE   = "/api/v1/mempool/txstate/"
+	GET_MEMPOOL_TXHASHS   = "/api/v1/mempool/txhashlist"
 	GET_VERSION           = "/api/v1/version"
 	GET_NETWORK_ID        = "/api/v1/networkid"
 	POST_RAW_TX           = "/api/v1/transaction"
@@ -173,6 +176,7 @@ const (
 	WS_ACTION_GET_GAS_PRICE               = "getgasprice"
 	WS_ACTION_GET_MEM_POOL_TX_STATE       = "getmempooltxstate"
 	WS_ACTION_GET_MEM_POOL_TX_COUNT       = "getmempooltxcount"
+	WS_ACTION_GET_MEM_POOL_TXHASH_LIST    = "getmempooltxhashlist"
 	WS_ACTION_GET_VERSION                 = "getversion"
 	WS_ACTION_GET_NETWORK_ID              = "getnetworkid"
 

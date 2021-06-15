@@ -255,6 +255,15 @@ func GetMemPoolTxCount(data []byte) (*sdkcom.MemPoolTxCount, error) {
 	}, nil
 }
 
+func GetMemPoolTxHashList(data []byte) ([]common.Uint256, error) {
+	res := make([]common.Uint256, 0)
+	err := json.Unmarshal(data, &res)
+	if err != nil {
+		return nil, fmt.Errorf("json.Unmarshal error:%s", err)
+	}
+	return res, nil
+}
+
 func GetLayer2StoreProof(data []byte) (*sdkcom.Layer2StoreProof, error) {
 	proof := &sdkcom.Layer2StoreProof{}
 	err := json.Unmarshal(data, proof)

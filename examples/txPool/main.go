@@ -4,6 +4,9 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	common2 "github.com/ethereum/go-ethereum/common"
@@ -37,7 +40,7 @@ func main() {
 	chainId = 12345
 	gasPrice = 500
 	gasLimit = 210000
-	txNums = 10000    // 压测交易数量
+	txNums = 100000   // 压测交易数量
 	acctNum = 2       // 随机生成的账户数量
 	transferAmt = 100 // oep4 和 erc20 转账的数量
 
@@ -45,12 +48,28 @@ func main() {
 	testNet := "http://172.168.3.73:30336"
 	//testNet = "http://127.0.0.1:20336"
 	//testNet = "http://192.168.0.189:20336"
+	testNet = "http://172.168.3.73:20336"
 
 	sdk.NewRpcClient().SetAddress(testNet)
+
+	if false {
+		txs, err := sdk.GetMemPoolTxHashList()
+		checkErr(err)
+		a := "8b5ec95b523a0659f711fa6f857644f61850e1daa789ddc001c3ebec2ba16e63"
+		for _, hash := range txs {
+			//fmt.Println(hash.ToHexString())
+			if hash.ToHexString() == a {
+				panic(hash.ToHexString())
+			}
+		}
+		return
+	}
 
 	testNet = "http://172.168.3.73:30339"
 	//testNet = "http://127.0.0.1:20339"
 	//testNet = "http://192.168.0.189:20339"
+	testNet = "http://172.168.3.73:20339"
+
 	ethClient, err := ethclient.Dial(testNet)
 	checkErr(err)
 
@@ -58,6 +77,7 @@ func main() {
 	checkErr(err)
 	acct, err := wallet.GetDefaultAccount([]byte("server"))
 	checkErr(err)
+
 	testPrivateKeyStr := "59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
 	testPrivateKey, err = crypto.HexToECDSA(testPrivateKeyStr)
 	checkErr(err)
@@ -70,9 +90,17 @@ func main() {
 	oep4Addr, erc20Addr := deployContract(sdk, ethClient, acct, testPrivateKey)
 	log.Infof("oep4Addr: %s, erc20Addr: %s", oep4Addr.ToHexString(), erc20Addr.String())
 
+	if false {
+		bal := erc20BalanceOf(erc20Addr, ethClient, testEthAddr)
+		fmt.Println(bal)
+		return
+	}
 	exit := make(chan bool, 0)
 	checkTxQueue := make(chan CheckTx, 10000)
-	startCheckTxTask(sdk, checkTxQueue, true, exit)
+	oep4Token := oep4.NewOep4(oep4Addr, sdk)
+	startCheckTxTask(sdk, checkTxQueue, true, exit, oep4Token, ethClient)
+	//txQueue := make(chan string, 10000)
+	//startGetMempoolTxTask(sdk, txQueue, true, exit)
 
 	accts := genAccts(sdk, wallet, acctNum, acct, oep4Addr, txNums)
 	ethKeys := genEthPrivateKey(acctNum, testPrivateKey, ethClient, erc20Addr, sdk, acct, txNums)
@@ -88,6 +116,7 @@ func main() {
 	}
 	close(checkTxQueue)
 	<-exit
+	<-exit
 	log.Info("*************** test end ******************")
 }
 
@@ -98,15 +127,21 @@ func testStress(sdk *ontology_go_sdk.OntologySdk, acct *ontology_go_sdk.Account,
 
 	erc20Txs := genErc20TransferTxs(txNum, erc20Addr, ethKeys)
 
+	var hash common.Uint256
 	for i := 0; i < txNum; i++ {
-		log.Infof("testStress i: %d start", i)
+		hash = oep4Txs[i].Hash()
+		log.Infof("testStress i: %d start, txHash: %s", i, hash.ToHexString())
 		txHash, err := sdk.SendTransaction(oep4Txs[i])
-		checkErr(err)
-		checkTxQueue <- NewCheckTx("oep4", txHash, 1)
-		err = ethClient.SendTransaction(context.Background(), erc20Txs[i])
-		checkErr(err)
-		checkTxQueue <- NewCheckTx("erc20", common.Uint256(erc20Txs[i].Hash()), 1)
 		log.Infof("testStress i: %d end", i)
+		checkErr(err)
+		checkTxQueue <- NewCheckTx("oep4", txHash, 1, 0, oep4Txs[i].Payer, oep4Addr)
+		hash = common.Uint256(erc20Txs[i].tx.Hash())
+		log.Infof("erc20 , i: %d,nonce: %d, txHash: %s start", i, erc20Txs[i].tx.Nonce(), hash.ToHexString())
+		err = ethClient.SendTransaction(context.Background(), erc20Txs[i].tx)
+		log.Infof("erc20 , i: %d, end", i)
+		checkErr(err)
+		checkTxQueue <- NewCheckTx("erc20", common.Uint256(erc20Txs[i].tx.Hash()), 1, erc20Txs[i].tx.Nonce(),
+			common.Address(erc20Txs[i].payer), common.Address(erc20Addr))
 	}
 }
 
@@ -129,7 +164,8 @@ func testNonce(ethClient *ethclient.Client, erc20Addr common2.Address, ethKeys [
 		thash = common.Uint256(erc20Tx2.Hash())
 		log.Infof("erc20Tx2:", thash.ToHexString())
 		checkErr(err)
-		checkTxQueue <- NewCheckTx("erc20", common.Uint256(erc20Tx.Hash()), 0)
+		checkTxQueue <- NewCheckTx("erc20", common.Uint256(erc20Tx.Hash()), 0, from.nonce,
+			common.Address(crypto.PubkeyToAddress(from.key.PublicKey)), common.Address(erc20Addr))
 		//err = ethClient.SendTransaction(context.Background(), erc20Tx2)
 		//checkErr(err)
 		//checkTxQueue <- NewCheckTx("erc20", common.Uint256(erc20Tx2.Hash()), 1)
@@ -140,7 +176,6 @@ func testNonce(ethClient *ethclient.Client, erc20Addr common2.Address, ethKeys [
 func genAccts(sdk *ontology_go_sdk.OntologySdk, wallet *ontology_go_sdk.Wallet, acctNum int, acct *ontology_go_sdk.Account,
 	oep4Addr common.Address, txNums int) []*ontology_go_sdk.Account {
 	accts := make([]*ontology_go_sdk.Account, 0)
-	accts = append(accts, acct)
 	unit := uint64(txNums * ongDecimal * 2 * 5 / 100)
 	unit = unit / uint64(acctNum)
 	token := oep4.NewOep4(oep4Addr, sdk)
@@ -190,7 +225,6 @@ func genEthPrivateKey(acctNum int, first *ecdsa.PrivateKey, ethClient *ethclient
 		addr:  addr,
 		nonce: nonce,
 	}
-	ks = append(ks, firstKey)
 
 	unit := txNums * ongDecimal * 2 * 5 / 100
 	unit = unit / acctNum
@@ -231,16 +265,22 @@ func transferEth(ethC *ethclient.Client, from *ecdsa.PrivateKey, nonce uint64, t
 }
 
 type CheckTx struct {
-	txType      string
-	txHash      common.Uint256
-	expectState byte
+	txType       string
+	txHash       common.Uint256
+	expectState  byte
+	nonce        uint64
+	payer        common.Address
+	contractAddr common.Address
 }
 
-func NewCheckTx(txType string, txHash common.Uint256, expectState byte) CheckTx {
+func NewCheckTx(txType string, txHash common.Uint256, expectState byte, nonce uint64, payer, contractAddr common.Address) CheckTx {
 	return CheckTx{
-		txType:      txType,
-		txHash:      txHash,
-		expectState: expectState,
+		txType:       txType,
+		txHash:       txHash,
+		expectState:  expectState,
+		nonce:        nonce,
+		payer:        payer,
+		contractAddr: contractAddr,
 	}
 }
 
@@ -262,7 +302,8 @@ func createWallet(sdk *ontology_go_sdk.OntologySdk) {
 	wallet.Save()
 }
 
-func startCheckTxTask(sdk *ontology_go_sdk.OntologySdk, checkTxQueue chan CheckTx, support bool, exit chan bool) {
+func startCheckTxTask(sdk *ontology_go_sdk.OntologySdk, checkTxQueue chan CheckTx, support bool, exit chan bool,
+	oep4Token *oep4.Oep4, ethClient *ethclient.Client) {
 	go func() {
 		checkedTxNum := 0
 		for checkTx := range checkTxQueue {
@@ -279,18 +320,50 @@ func startCheckTxTask(sdk *ontology_go_sdk.OntologySdk, checkTxQueue chan CheckT
 						log.Infof("expect state: %d, actual state: %d", checkTx.expectState, evt.State)
 						panic(checkTx.txHash.ToHexString())
 					} else {
-						log.Infof("check tx success,txType: %s, checkedTxNum: %d, txhash: %s", checkTx.txType, checkedTxNum, checkTx.txHash.ToHexString())
+						//log.Infof("check tx success,txType: %s, checkedTxNum: %d, txhash: %s", checkTx.txType, checkedTxNum, checkTx.txHash.ToHexString())
 						break
 					}
 				} else {
 					if err != nil {
 						log.Errorf("txType: %s, txhash: %s, err: %s", checkTx.txType, checkTx.txHash.ToHexString(), err)
 					}
-					log.Infof("wait tx, txType: %s, txhash: %s", checkTx.txType, checkTx.txHash.ToHexString())
+					balance, err := sdk.Native.Ong.BalanceOf(checkTx.payer)
+					checkErr(err)
+					var tokenBalance *big.Int
+					if checkTx.txType == "oep4" {
+						tokenBalance, err = oep4Token.BalanceOf(checkTx.payer)
+						checkErr(err)
+					} else if checkTx.txType == "erc20" {
+						tokenBalance = erc20BalanceOf(common2.Address(checkTx.contractAddr), ethClient, common2.Address(checkTx.payer))
+					}
+					log.Infof("wait tx, txType: %s, ong balance: %d, token balance: %s, txhash: %s", checkTx.txType, balance, tokenBalance.String(), checkTx.txHash.ToHexString())
 					time.Sleep(3 * time.Second)
 					continue
 				}
 			}
+		}
+		exit <- true
+	}()
+}
+
+// get tx
+func startGetMempoolTxTask(sdk *ontology_go_sdk.OntologySdk, txHashQueue chan string, support bool, exit chan bool) {
+	go func() {
+		checkedTxNum := 0
+		for hash := range txHashQueue {
+			checkedTxNum++
+			// 暂时不用
+			if !support {
+				log.Infof("checkedTxNum: %d", checkedTxNum)
+				continue
+			}
+			count, err := sdk.GetMemPoolTxCount()
+			checkErr(err)
+			txState, err := sdk.GetMemPoolTxState(hash)
+			checkErr(err)
+			txStateBs, err := json.Marshal(txState)
+			checkErr(err)
+			log.Infof("MemPoolTxCount: %d, txState: %s", count, string(txStateBs))
 		}
 		exit <- true
 	}()
@@ -311,8 +384,13 @@ func initContract(sdk *ontology_go_sdk.OntologySdk, acct *ontology_go_sdk.Accoun
 	}
 }
 
-func genErc20TransferTxs(txNum int, contractAddr common2.Address, ethKeys []*EthKey) []*types.Transaction {
-	erc20Txs := make([]*types.Transaction, 0)
+type Erc20TransferTx struct {
+	tx    *types.Transaction
+	payer common2.Address
+}
+
+func genErc20TransferTxs(txNum int, contractAddr common2.Address, ethKeys []*EthKey) []*Erc20TransferTx {
+	erc20Txs := make([]*Erc20TransferTx, 0)
 	rand.Seed(time.Now().Unix())
 	l := len(ethKeys)
 	var ind, ind2 int
@@ -322,7 +400,11 @@ func genErc20TransferTxs(txNum int, contractAddr common2.Address, ethKeys []*Eth
 		ind = i % l
 		ind2 = (i + 1) % l
 		erc20Tx := genErc20TransferTx(int64(gasPrice), contractAddr, ethKeys[ind], ethKeys[ind2].addr, big.NewInt(amt))
-		erc20Txs = append(erc20Txs, erc20Tx)
+		tx := &Erc20TransferTx{
+			tx:    erc20Tx,
+			payer: crypto.PubkeyToAddress(ethKeys[ind].key.PublicKey),
+		}
+		erc20Txs = append(erc20Txs, tx)
 		ethKeys[ind].nonce++
 	}
 	return erc20Txs
@@ -332,6 +414,26 @@ func genErc20TransferTx(gasPrice int64, contractAddr common2.Address, fromKey *E
 	erc20Tx, err := GenEVMTx(fromKey, gasPrice, contractAddr, "transfer", toAddr, amt)
 	checkErr(err)
 	return erc20Tx
+}
+
+func erc20BalanceOf(contractAddr common2.Address, ethClient *ethclient.Client, addr common2.Address) *big.Int {
+	//erc20, err := eth.NewErc20(contractAddr, ethClient)
+	//checkErr(err)
+	//balance, err := erc20.BalanceOf(&bind.CallOpts{Pending: false}, addr)
+	if true {
+		return big.NewInt(0)
+	}
+	parsed, err := abi.JSON(strings.NewReader(WingABI))
+	checkErr(err)
+	input, err := parsed.Pack("balanceOf", addr)
+	opts := &bind.CallOpts{Pending: false}
+	msg := ethereum.CallMsg{From: opts.From, To: &contractAddr, Data: input}
+	output, err := ethClient.CallContract(context.Background(), msg, opts.BlockNumber)
+	checkErr(err)
+	res, err := parsed.Unpack("balanceOf", output)
+	checkErr(err)
+	d := res[0].(*big.Int)
+	return d
 }
 
 func GenEVMTx(from *EthKey, gasPrice int64, contractAddr common2.Address, method string, params ...interface{}) (*types.Transaction, error) {
@@ -379,8 +481,8 @@ func genOep4Tx(sdk *ontology_go_sdk.OntologySdk, acct *ontology_go_sdk.Account, 
 
 func deployContract(sdk *ontology_go_sdk.OntologySdk, ethClient *ethclient.Client, acct *ontology_go_sdk.Account,
 	testPrivateKey *ecdsa.PrivateKey) (common.Address, common2.Address) {
-	oep4Code := loadContract("examples/txPool/test-contract/WingToken.avm")
-	erc20Code := loadContract("examples/txPool/test-contract/wing_eth.evm")
+	oep4Code := loadContract("test-contract/WingToken.avm")
+	erc20Code := loadContract("test-contract/wing_eth.evm")
 
 	oep4Addr := common.AddressFromVmCode(oep4Code)
 	pc, err := sdk.GetSmartContract(oep4Addr.ToHexString())

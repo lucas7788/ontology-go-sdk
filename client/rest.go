@@ -168,6 +168,10 @@ func (this *RestClient) getMemPoolTxState(qid, txHash string) ([]byte, error) {
 	return this.sendRestGetRequest(reqPath)
 }
 
+func (this *RestClient) getMemPoolTxHashList(qid string) ([]byte, error) {
+	return this.sendRestGetRequest(GET_MEMPOOL_TXHASHS)
+}
+
 func (this *RestClient) getMemPoolTxCount(qid string) ([]byte, error) {
 	reqPath := GET_MEMPOOL_TXCOUNT
 	return this.sendRestGetRequest(reqPath)
