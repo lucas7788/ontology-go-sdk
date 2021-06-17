@@ -40,9 +40,9 @@ func main() {
 	chainId = 12345
 	gasPrice = 500
 	gasLimit = 210000
-	txNums = 10 // 压测交易数量
-	acctNum = 2      // 随机生成的账户数量
-	transferAmt = 1  // oep4 和 erc20 转账的数量
+	txNums = 10000     // 压测交易数量
+	acctNum = 2     // 随机生成的账户数量
+	transferAmt = 1 // oep4 和 erc20 转账的数量
 	walletFile := "wallet.dat"
 	pwd := []byte("server")
 	//walletFile = "/Users/sss/gopath/src/github.com/ontio/ontology/wallet.dat"
@@ -422,6 +422,7 @@ func startGetMempoolTxTask(sdk *ontology_go_sdk.OntologySdk, txHashQueue chan st
 func initContract(sdk *ontology_go_sdk.OntologySdk, acct *ontology_go_sdk.Account, oep4Addr common.Address) {
 	oo := oep4.NewOep4(oep4Addr, sdk)
 	res, err := oo.BalanceOf(acct.Address)
+	log.Infof("oep4 balance: %d", res.Uint64())
 	checkErr(err)
 	if res.Uint64() == 0 {
 		_, err = sdk.NeoVM.InvokeNeoVMContract(gasPrice, gasLimit, acct, acct, oep4Addr,
