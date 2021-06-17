@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -39,7 +40,7 @@ func main() {
 	chainId = 12345
 	gasPrice = 500
 	gasLimit = 210000
-	txNums = 1000000 // 压测交易数量
+	txNums = 10 // 压测交易数量
 	acctNum = 2      // 随机生成的账户数量
 	transferAmt = 1  // oep4 和 erc20 转账的数量
 	walletFile := "wallet.dat"
@@ -68,7 +69,6 @@ func main() {
 
 	ethClient, err := ethclient.Dial(testNet)
 	checkErr(err)
-
 	wallet, err := sdk.OpenWallet(walletFile)
 	checkErr(err)
 	acct, err := wallet.GetDefaultAccount(pwd)
@@ -86,9 +86,7 @@ func main() {
 	// okex   dbfea0be5695ca821effbdeb5ecfb8128916e749d8ff00a6927b0a871021db5d
 	// kovan c9cce542e12be0c7adbdb6fa6935abccbec026c66ccbb4e0ae7c8de3ab709e1d
 	erc20Addr := deployEthContract(ethClient, sdk)
-	if false {
-		return
-	}
+
 	oep4Addr := deployOep4Contract(sdk, acct)
 
 	log.Infof("oep4Addr: %s, erc20Addr: %s", oep4Addr.ToHexString(), erc20Addr.String())
@@ -330,6 +328,7 @@ func NewCheckTx(txType string, txHash common.Uint256, expectState byte, nonce ui
 }
 
 func getTxNonce(ethClient *ethclient.Client, addr common2.Address) uint64 {
+	fmt.Println(addr.String())
 	txNonce, err := ethClient.PendingNonceAt(context.Background(), addr)
 	checkErr(err)
 	return txNonce
@@ -563,7 +562,7 @@ func deployEthContract(ethClient *ethclient.Client, sdk *ontology_go_sdk.Ontolog
 		nonce := getTxNonce(ethClient, testEthAddr)
 		log.Infof("deploy eth nonce: %d", nonce)
 		opts.Nonce = big.NewInt(int64(nonce))
-		opts.GasLimit = 8000000
+		opts.GasLimit = 5000000
 		ethTx, err := NewDeployEvmContract(opts, erc20Code, WingABI)
 		checkErr(err)
 		err = ethClient.SendTransaction(context.Background(), ethTx)
@@ -596,7 +595,7 @@ func waitTx(sdk *ontology_go_sdk.OntologySdk, txHash string) {
 					log.Infof("notify: %v", n)
 				}
 			} else {
-				log.Infof("evt.CreatedContract:", evt.CreatedContract.ToHexString())
+				log.Infof("evt.CreatedContract: %s", evt.CreatedContract.ToHexString())
 			}
 			break
 		}

@@ -341,8 +341,6 @@ github.com/hashicorp/go.net v0.0.1/go.mod h1:hjKkEWcCURg++eb33jQU7oqQcI9XDCnUzHA
 github.com/hashicorp/golang-lru v0.0.0-20160813221303-0a025b7e63ad/go.mod h1:/m3WP610KZHVQ1SGc6re/UDhFvYD7pJ4Ao+sR/qLZy8=
 github.com/hashicorp/golang-lru v0.5.0/go.mod h1:/m3WP610KZHVQ1SGc6re/UDhFvYD7pJ4Ao+sR/qLZy8=
 github.com/hashicorp/golang-lru v0.5.1/go.mod h1:/m3WP610KZHVQ1SGc6re/UDhFvYD7pJ4Ao+sR/qLZy8=
-github.com/hashicorp/golang-lru v0.5.3 h1:YPkqC67at8FYaadspW/6uE0COsBxS2656RLEr8Bppgk=
-github.com/hashicorp/golang-lru v0.5.3/go.mod h1:iADmTwqILo4mZ8BN3D2Q6+9jd8WM5uGBxy+E8yxSoD4=
 github.com/hashicorp/golang-lru v0.5.4/go.mod h1:iADmTwqILo4mZ8BN3D2Q6+9jd8WM5uGBxy+E8yxSoD4=
 github.com/hashicorp/golang-lru v0.5.5-0.20210104140557-80c98217689d h1:dg1dEPuWpEqDnvIw251EVy4zlP8gWbsGj4BsUKCRpYs=
 github.com/hashicorp/golang-lru v0.5.5-0.20210104140557-80c98217689d/go.mod h1:iADmTwqILo4mZ8BN3D2Q6+9jd8WM5uGBxy+E8yxSoD4=
@@ -503,8 +501,6 @@ github.com/ontio/go-bip32 v0.0.0-20190520025953-d3cea6894a2b h1:UQDN12BzdWhXQL0t
 github.com/ontio/go-bip32 v0.0.0-20190520025953-d3cea6894a2b/go.mod h1:J0eVc7BEMmVVXbGv9PHoxjRSEwOwLr0qfzPk8Rdl5iw=
 github.com/ontio/ontology v1.11.1-0.20210602032543-46bd96885d94 h1:ZbVi+tf9nAHCwTJNm8OHQrb+2/9Q9jLFBDK72h4cq7c=
 github.com/ontio/ontology v1.11.1-0.20210602032543-46bd96885d94/go.mod h1:znXBaRgv8xM31y8lpOGsdmv8ysbh5xeWuksuDQPb/IA=
-github.com/ontio/ontology v1.13.2 h1:aZ588wkpcNpJP44i7lyw7bCyMkIJx32u0K7C2GrQ4/s=
-github.com/ontio/ontology v1.13.2/go.mod h1:8KupsoZz9st073fFpA71uCZgFMXqg4WrIRfVLaBWexc=
 github.com/ontio/ontology-crypto v1.0.9 h1:6fxBsz3W4CcdJk4/9QO7j0Qq7NdlP2ixPrViu8XpzzM=
 github.com/ontio/ontology-crypto v1.0.9/go.mod h1:h/jeqqb9Ma/Leszxqh6zY3eTF2yks44hyRKikMni+YQ=
 github.com/ontio/ontology-eventbus v0.9.1/go.mod h1:hCQIlbdPckcfykMeVUdWrqHZ8d30TBdmLfXCVWGkYhM=
