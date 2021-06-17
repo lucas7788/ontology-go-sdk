@@ -39,9 +39,9 @@ func main() {
 	chainId = 12345
 	gasPrice = 500
 	gasLimit = 210000
-	txNums = 10 // 压测交易数量
-	acctNum = 2     // 随机生成的账户数量
-	transferAmt = 1 // oep4 和 erc20 转账的数量
+	txNums = 1000000 // 压测交易数量
+	acctNum = 2      // 随机生成的账户数量
+	transferAmt = 1  // oep4 和 erc20 转账的数量
 	walletFile := "wallet.dat"
 	pwd := []byte("server")
 	//walletFile = "/Users/sss/gopath/src/github.com/ontio/ontology/wallet.dat"
@@ -178,7 +178,7 @@ func exitFunc(oep4Addr common.Address, sdk *ontology_go_sdk.OntologySdk, accts [
 		checkErr(err)
 		token.Transfer(acctI, acct.Address, bal, acctI, gasPrice, gasLimit)
 		ba := balanceOfOng(sdk, acctI.Address)
-		transferOng(sdk, acctI, acct.Address, ba-gasPrice * gasLimit)
+		transferOng(sdk, acctI, acct.Address, ba-gasPrice*gasLimit)
 	}
 	for _, k := range ethKeys {
 		bal := erc20BalanceOf(erc20Addr, ethClient, k.addr)
@@ -187,7 +187,7 @@ func exitFunc(oep4Addr common.Address, sdk *ontology_go_sdk.OntologySdk, accts [
 		ba := balanceOfOng(sdk, common.Address(k.addr))
 		nonce, err := ethClient.PendingNonceAt(context.Background(), k.addr)
 		checkErr(err)
-		transferEth(ethClient, k.key, nonce, common2.Address(acct.Address), big.NewInt(int64(ba-gasPrice * gasLimit)))
+		transferEth(ethClient, k.key, nonce, common2.Address(acct.Address), big.NewInt(int64(ba-gasPrice*gasLimit)))
 	}
 	log.Info("exit success")
 }
