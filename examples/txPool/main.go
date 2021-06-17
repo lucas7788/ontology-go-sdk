@@ -39,7 +39,7 @@ func main() {
 	chainId = 12345
 	gasPrice = 500
 	gasLimit = 210000
-	txNums = 100   // 压测交易数量
+	txNums = 1000    // 压测交易数量
 	acctNum = 2     // 随机生成的账户数量
 	transferAmt = 1 // oep4 和 erc20 转账的数量
 	walletFile := "wallet.dat"
@@ -104,7 +104,7 @@ func main() {
 		exitFunc(oep4Addr, sdk, accts, acct, ethKeys, ethClient, erc20Addr, testEthAddr)
 	}()
 	// 正常交易压力测试
-	if true {
+	if false {
 		testStress(sdk, acct, accts, oep4Addr, txNums, ethClient, ethKeys, erc20Addr, checkTxQueue)
 	}
 
@@ -139,7 +139,11 @@ func testStress(sdk *ontology_go_sdk.OntologySdk, acct *ontology_go_sdk.Account,
 }
 
 func testNonce(ethClient *ethclient.Client, sdk *ontology_go_sdk.OntologySdk, erc20Addr common2.Address, ethKeys []*EthKey, txNum int) {
-
+	for _, kk := range ethKeys {
+		txNonce := getTxNonce(ethClient, kk.addr)
+		kk.nonce = txNonce + 1
+		log.Infof("nonce: %d, address: %s", kk.nonce, kk.addr.String())
+	}
 	l := len(ethKeys)
 	var ind, ind2 int
 	var from *EthKey
@@ -150,18 +154,20 @@ func testNonce(ethClient *ethclient.Client, sdk *ontology_go_sdk.OntologySdk, er
 		ind2 = (i + 1) % l
 		from = ethKeys[ind]
 		toAddr = ethKeys[ind2].addr
-		for i := 0; i < 20; i++ {
-			erc20Tx := genErc20TransferTx(int64(gasPrice+uint64(10*i)), erc20Addr, from, toAddr, big.NewInt(int64(transferAmt+1*i)))
+		log.Infof("nonce: %d, address: %s", from.nonce, from.addr.String())
+		for j := 0; j < 20; j++ {
+			erc20Tx := genErc20TransferTx(int64(gasPrice+uint64(10*j)), erc20Addr, from, toAddr, big.NewInt(int64(transferAmt+1*j)))
 			time.Sleep(10 * time.Millisecond)
+			log.Infof("txNum: %d, j: %d, txHash: %s", i, j, erc20Tx.Hash().String())
 			err := ethClient.SendTransaction(context.Background(), erc20Tx)
 			checkErr(err)
 		}
-		sdk.WaitForGenerateBlock(time.Second*40, 1)
 		from.nonce++
-		txNonce := getTxNonce(ethClient, from.addr)
-		if from.nonce != txNonce {
-			panic(fmt.Sprintf("from.nonce: %d, txNonce: %d, address: %s", from.nonce, txNonce, from.addr.String()))
-		}
+	}
+	sdk.WaitForGenerateBlock(time.Second*40, 2)
+	txNonce := getTxNonce(ethClient, from.addr)
+	if from.nonce != txNonce {
+		panic(fmt.Sprintf("from.nonce: %d, txNonce: %d, address: %s", from.nonce, txNonce, from.addr.String()))
 	}
 }
 
