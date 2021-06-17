@@ -40,7 +40,7 @@ func main() {
 	chainId = 12345
 	gasPrice = 500
 	gasLimit = 210000
-	txNums = 10000     // 压测交易数量
+	txNums = 10000  // 压测交易数量
 	acctNum = 2     // 随机生成的账户数量
 	transferAmt = 1 // oep4 和 erc20 转账的数量
 	walletFile := "wallet.dat"
@@ -198,15 +198,20 @@ func genAccts(sdk *ontology_go_sdk.OntologySdk, wallet *ontology_go_sdk.Wallet, 
 	token := oep4.NewOep4(oep4Addr, sdk)
 	var acct2 *ontology_go_sdk.Account
 	var err error
+	var txHashs []common.Uint256
 	for i := 0; i < acctNum; i++ {
 		acct2, err = wallet.NewDefaultSettingAccount([]byte("111111"))
 		checkErr(err)
 		transferOng(sdk, acct, acct2.Address, unit)
-		_, err = token.Transfer(acct, acct2.Address, big.NewInt(int64(unit)), acct, gasPrice, gasLimit)
+		hash, err := token.Transfer(acct, acct2.Address, big.NewInt(int64(unit)), acct, gasPrice, gasLimit)
 		checkErr(err)
 		accts = append(accts, acct2)
+		txHashs = append(txHashs, hash)
 	}
 	sdk.WaitForGenerateBlock(time.Second*40, 2)
+	for _, hash := range txHashs {
+		waitTx(sdk, hash.ToHexString())
+	}
 	for _, a := range accts {
 		ba, err := sdk.Native.Ong.BalanceOf(a.Address)
 		checkErr(err)
@@ -273,6 +278,10 @@ func genEthPrivateKey(acctNum int, first *ecdsa.PrivateKey, ethClient *ethclient
 		})
 	}
 	sdk.WaitForGenerateBlock(time.Second*40, 2)
+	for _, hash := range erc20TxHash {
+		ttt := common.Uint256(hash)
+		waitTx(sdk, ttt.ToHexString())
+	}
 	for k, a := range ks {
 		for {
 			ba, err := sdk.Native.Ong.BalanceOf(common.Address(a.addr))
