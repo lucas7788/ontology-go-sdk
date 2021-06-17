@@ -36,28 +36,27 @@ var transferAmt, txNums, acctNum int
 var ongDecimal = 1000000000
 
 func main() {
-
 	chainId = 12345
-	gasPrice = 500
+	gasPrice = 0
 	gasLimit = 210000
-	txNums = 10000  // 压测交易数量
+	txNums = 100   // 压测交易数量
 	acctNum = 2     // 随机生成的账户数量
 	transferAmt = 1 // oep4 和 erc20 转账的数量
 	walletFile := "wallet.dat"
 	pwd := []byte("server")
-	//walletFile = "/Users/sss/gopath/src/github.com/ontio/ontology/wallet.dat"
-	//pwd = []byte("111111")
+	walletFile = "/Users/sss/gopath/src/github.com/ontio/ontology/wallet.dat"
+	pwd = []byte("111111")
 
 	sdk := ontology_go_sdk.NewOntologySdk()
 	testNet := "http://172.168.3.73:30336"
-	//testNet = "http://127.0.0.1:20336"
+	testNet = "http://127.0.0.1:20336"
 	//testNet = "http://192.168.0.189:20336"
 	//testNet = "http://172.168.3.73:20336"
 
 	sdk.NewRpcClient().SetAddress(testNet)
 
 	testNet = "http://172.168.3.73:30339"
-	//testNet = "http://127.0.0.1:20339"
+	testNet = "http://127.0.0.1:20339"
 	//testNet = "https://exchaintestrpc.okex.org"
 	//chainId = 65
 	//testNet = "https://kovan.infura.io/v3/d87255a6627542eba4eaa9d5278832e0"
@@ -80,8 +79,8 @@ func main() {
 	testEthAddr := crypto.PubkeyToAddress(testPrivateKey.PublicKey)
 	testEthAddrOnt := common.Address(testEthAddr)
 	log.Infof("testEthAddrOnt: %s, testEthAddr: %s", testEthAddrOnt.ToBase58(), testEthAddr.String())
-	//transferOng(sdk, acct, common.Address(testEthAddr), uint64(txNums*ongDecimal*5/100/acctNum))
-	//sdk.WaitForGenerateBlock(time.Second*40, 1)
+	transferOng(sdk, acct, common.Address(testEthAddr), uint64(txNums*ongDecimal*5/100/acctNum))
+	sdk.WaitForGenerateBlock(time.Second*40, 1)
 
 	// okex   dbfea0be5695ca821effbdeb5ecfb8128916e749d8ff00a6927b0a871021db5d
 	// kovan c9cce542e12be0c7adbdb6fa6935abccbec026c66ccbb4e0ae7c8de3ab709e1d
@@ -110,8 +109,8 @@ func main() {
 	}
 
 	// 相同的txNonce交易  交易手续费大的应该成功
-	if false {
-		testNonce(ethClient, erc20Addr, ethKeys, checkTxQueue, txNums)
+	if true {
+		testNonce(ethClient, sdk, erc20Addr, ethKeys, txNums)
 	}
 	close(checkTxQueue)
 	<-exit
@@ -139,31 +138,30 @@ func testStress(sdk *ontology_go_sdk.OntologySdk, acct *ontology_go_sdk.Account,
 	}
 }
 
-func testNonce(ethClient *ethclient.Client, erc20Addr common2.Address, ethKeys []*EthKey, checkTxQueue chan CheckTx, txNum int) {
+func testNonce(ethClient *ethclient.Client, sdk *ontology_go_sdk.OntologySdk, erc20Addr common2.Address, ethKeys []*EthKey, txNum int) {
 
 	l := len(ethKeys)
 	var ind, ind2 int
 	var from *EthKey
 	var toAddr common2.Address
 	for i := 0; i < txNum; i++ {
+		log.Infof("testNonce,txNum: %d", i)
 		ind = i % l
 		ind2 = (i + 1) % l
 		from = ethKeys[ind]
 		toAddr = ethKeys[ind2].addr
-		erc20Tx := genErc20TransferTx(int64(gasPrice), erc20Addr, from, toAddr, big.NewInt(int64(transferAmt)))
-		erc20Tx2 := genErc20TransferTx(int64(gasPrice+10), erc20Addr, from, toAddr, big.NewInt(int64(transferAmt+1)))
-		thash := common.Uint256(erc20Tx.Hash())
-		log.Infof("erc20Tx:", thash.ToHexString())
-		err := ethClient.SendTransaction(context.Background(), erc20Tx)
-		thash = common.Uint256(erc20Tx2.Hash())
-		log.Infof("erc20Tx2:", thash.ToHexString())
-		checkErr(err)
-		checkTxQueue <- NewCheckTx("erc20", common.Uint256(erc20Tx.Hash()), 0, from.nonce,
-			common.Address(crypto.PubkeyToAddress(from.key.PublicKey)), common.Address(erc20Addr))
-		//err = ethClient.SendTransaction(context.Background(), erc20Tx2)
-		//checkErr(err)
-		//checkTxQueue <- NewCheckTx("erc20", common.Uint256(erc20Tx2.Hash()), 1)
+		for i := 0; i < 20; i++ {
+			erc20Tx := genErc20TransferTx(int64(gasPrice+uint64(10*i)), erc20Addr, from, toAddr, big.NewInt(int64(transferAmt+1*i)))
+			time.Sleep(10 * time.Millisecond)
+			err := ethClient.SendTransaction(context.Background(), erc20Tx)
+			checkErr(err)
+		}
+		sdk.WaitForGenerateBlock(time.Second*40, 1)
 		from.nonce++
+		txNonce := getTxNonce(ethClient, from.addr)
+		if from.nonce != txNonce {
+			panic(fmt.Sprintf("from.nonce: %d, txNonce: %d, address: %s", from.nonce, txNonce, from.addr.String()))
+		}
 	}
 }
 
@@ -337,7 +335,6 @@ func NewCheckTx(txType string, txHash common.Uint256, expectState byte, nonce ui
 }
 
 func getTxNonce(ethClient *ethclient.Client, addr common2.Address) uint64 {
-	fmt.Println(addr.String())
 	txNonce, err := ethClient.PendingNonceAt(context.Background(), addr)
 	checkErr(err)
 	return txNonce
@@ -537,7 +534,7 @@ func genOep4Tx(sdk *ontology_go_sdk.OntologySdk, acct *ontology_go_sdk.Account, 
 func deployOep4Contract(sdk *ontology_go_sdk.OntologySdk, acct *ontology_go_sdk.Account,
 ) common.Address {
 	oep4File := "examples/txPool/test-contract/WingToken.avm"
-	oep4File = "test-contract/WingToken.avm"
+	//oep4File = "test-contract/WingToken.avm"
 	oep4Code := loadContract(oep4File)
 
 	oep4Addr := common.AddressFromVmCode(oep4Code)
@@ -558,7 +555,7 @@ func deployOep4Contract(sdk *ontology_go_sdk.OntologySdk, acct *ontology_go_sdk.
 
 func deployEthContract(ethClient *ethclient.Client, sdk *ontology_go_sdk.OntologySdk) common2.Address {
 	erc20File := "examples/txPool/test-contract/wing_eth.evm"
-	erc20File = "test-contract/wing_eth.evm"
+	//erc20File = "test-contract/wing_eth.evm"
 	erc20Code := loadContract(erc20File)
 	testEthAddr := crypto.PubkeyToAddress(testPrivateKey.PublicKey)
 	nonce := getTxNonce(ethClient, testEthAddr)
