@@ -37,7 +37,7 @@ var ongDecimal = 1000000000
 
 func main() {
 	chainId = 12345
-	gasPrice = 0
+	gasPrice = 500
 	gasLimit = 210000
 	txNums = 100   // 压测交易数量
 	acctNum = 2     // 随机生成的账户数量
