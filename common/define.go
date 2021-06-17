@@ -167,10 +167,13 @@ func (this ResultItem) ToString() (string, error) {
 
 //SmartContactEvent object for event of transaction
 type SmartContactEvent struct {
-	TxHash      string
-	State       byte
-	GasConsumed uint64
-	Notify      []*NotifyEventInfo
+	TxHash          string
+	State           byte
+	GasConsumed     uint64
+	Notify          []*NotifyEventInfo
+	GasStepUsed     uint64
+	TxIndex         uint32
+	CreatedContract common.Address
 }
 
 type NotifyEventInfo struct {
