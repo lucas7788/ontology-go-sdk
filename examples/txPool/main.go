@@ -39,7 +39,7 @@ func main() {
 	chainId = 12345
 	gasPrice = 500
 	gasLimit = 210000
-	txNums = 1    // 压测交易数量
+	txNums = 10     // 压测交易数量
 	acctNum = 1     // 随机生成的账户数量
 	transferAmt = 1 // oep4 和 erc20 转账的数量
 	walletFile := "wallet.dat"
@@ -68,6 +68,12 @@ func main() {
 
 	ethClient, err := ethclient.Dial(testNet)
 	checkErr(err)
+
+	if false {
+		nonce := getTxNonce(ethClient, common2.HexToAddress("0xBedB5e30a7F96852a059BadE4c50Ab9E97d7AAeB"))
+		fmt.Println(nonce)
+		return
+	}
 	wallet, err := sdk.OpenWallet(walletFile)
 	checkErr(err)
 	acct, err := wallet.GetDefaultAccount(pwd)
@@ -115,6 +121,11 @@ func main() {
 	close(checkTxQueue)
 	<-exit
 	log.Info("*************** test end ******************")
+
+	for _, item := range ethKeys {
+		nonce := getTxNonce(ethClient, item.addr)
+		log.Infof("nonce: %d, item.nonce: %d", nonce, item.nonce)
+	}
 }
 
 func testStress(sdk *ontology_go_sdk.OntologySdk, acct *ontology_go_sdk.Account, accts []*ontology_go_sdk.Account,
@@ -139,15 +150,12 @@ func testStress(sdk *ontology_go_sdk.OntologySdk, acct *ontology_go_sdk.Account,
 }
 
 func testNonce(ethClient *ethclient.Client, sdk *ontology_go_sdk.OntologySdk, erc20Addr common2.Address, ethKeys []*EthKey, txNum int) {
-	for _, kk := range ethKeys {
-		txNonce := getTxNonce(ethClient, kk.addr)
-		kk.nonce = txNonce + 1
-		log.Infof("nonce: %d, address: %s", kk.nonce, kk.addr.String())
-	}
+	updateNonce(ethKeys, ethClient)
 	l := len(ethKeys)
 	var ind, ind2 int
 	var from *EthKey
 	var toAddr common2.Address
+	var hash common.Uint256
 	for i := 0; i < txNum; i++ {
 		log.Infof("testNonce,txNum: %d", i)
 		ind = i % l
@@ -157,39 +165,60 @@ func testNonce(ethClient *ethclient.Client, sdk *ontology_go_sdk.OntologySdk, er
 		log.Infof("nonce: %d, address: %s", from.nonce, from.addr.String())
 		for j := 0; j < 20; j++ {
 			erc20Tx := genErc20TransferTx(int64(gasPrice+uint64(10*j)), erc20Addr, from, toAddr, big.NewInt(int64(transferAmt+1*j)))
-			time.Sleep(10 * time.Millisecond)
-			log.Infof("txNum: %d, j: %d, txHash: %s", i, j, erc20Tx.Hash().String())
+			hash = common.Uint256(erc20Tx.Hash())
+			log.Infof("txNum: %d, j: %d, txHash: %s", i, j, hash.ToHexString())
 			err := ethClient.SendTransaction(context.Background(), erc20Tx)
 			checkErr(err)
 		}
 		from.nonce++
 	}
-	sdk.WaitForGenerateBlock(time.Second*40, 2)
+	sdk.WaitForGenerateBlock(time.Second*50, 3)
 	txNonce := getTxNonce(ethClient, from.addr)
 	if from.nonce != txNonce {
-		panic(fmt.Sprintf("from.nonce: %d, txNonce: %d, address: %s", from.nonce, txNonce, from.addr.String()))
+		log.Error(fmt.Sprintf("from.nonce: %d, txNonce: %d, address: %s", from.nonce, txNonce, from.addr.String()))
+		time.Sleep(time.Second * 2)
+		txNonce22 := getTxNonce(ethClient, from.addr)
+		log.Infof("txNonce22: %d", txNonce22)
+		txNonce22, err := ethClient.NonceAt(context.Background(), from.addr, nil)
+		fmt.Println(txNonce22, err)
+	}
+}
+
+func updateNonce(ethKeys []*EthKey, ethClient *ethclient.Client) {
+	for _, kk := range ethKeys {
+		txNonce := getTxNonce(ethClient, kk.addr)
+		kk.nonce = txNonce
+		log.Infof("nonce: %d, address: %s", kk.nonce, kk.addr.String())
 	}
 }
 
 func exitFunc(oep4Addr common.Address, sdk *ontology_go_sdk.OntologySdk, accts []*ontology_go_sdk.Account,
 	acct *ontology_go_sdk.Account, ethKeys []*EthKey, ethClient *ethclient.Client, erc20Addr common2.Address,
 	testEthAddr common2.Address) {
+	updateNonce(ethKeys, ethClient)
 	token := oep4.NewOep4(oep4Addr, sdk)
 	for _, acctI := range accts {
 		bal, err := token.BalanceOf(acctI.Address)
 		checkErr(err)
 		token.Transfer(acctI, acct.Address, bal, acctI, gasPrice, gasLimit)
 		ba := balanceOfOng(sdk, acctI.Address)
-		transferOng(sdk, acctI, acct.Address, ba-gasPrice*gasLimit)
+		if ba > gasLimit*gasPrice {
+			transferOng(sdk, acctI, acct.Address, ba-gasPrice*gasLimit)
+		}
 	}
 	for _, k := range ethKeys {
+		ongBalance := balanceOfOng(sdk, common.Address(k.addr))
+		if ongBalance < gasPrice*gasLimit {
+			continue
+		}
+
 		bal := erc20BalanceOf(erc20Addr, ethClient, k.addr)
+		log.Errorf("erc20BalanceOf bal:%s", bal.String())
 		transferErc20(ethClient, erc20Addr, k, testEthAddr, bal)
 
-		ba := balanceOfOng(sdk, common.Address(k.addr))
 		nonce, err := ethClient.PendingNonceAt(context.Background(), k.addr)
 		checkErr(err)
-		transferEth(ethClient, k.key, nonce, common2.Address(acct.Address), big.NewInt(int64(ba-gasPrice*gasLimit)))
+		transferEth(ethClient, k.key, nonce, common2.Address(acct.Address), big.NewInt(int64(ongBalance-gasPrice*gasLimit)))
 	}
 	log.Info("exit success")
 }
@@ -377,7 +406,7 @@ func startCheckTxTask(sdk *ontology_go_sdk.OntologySdk, checkTxQueue chan CheckT
 						showBalance(sdk, &checkTx, oep4Token, ethClient)
 						panic(checkTx.txHash.ToHexString())
 					} else {
-						//log.Infof("check tx success,txType: %s, checkedTxNum: %d, txhash: %s", checkTx.txType, checkedTxNum, checkTx.txHash.ToHexString())
+						log.Infof("check tx success,txType: %s, checkedTxNum: %d, txhash: %s", checkTx.txType, checkedTxNum, checkTx.txHash.ToHexString())
 						break
 					}
 				} else {
