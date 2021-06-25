@@ -173,7 +173,7 @@ type SmartContactEvent struct {
 	Notify          []*NotifyEventInfo
 	GasStepUsed     uint64
 	TxIndex         uint32
-	CreatedContract common.Address
+	CreatedContract string
 }
 
 type NotifyEventInfo struct {

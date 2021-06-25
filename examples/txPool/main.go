@@ -39,8 +39,8 @@ func main() {
 	chainId = 12345
 	gasPrice = 500
 	gasLimit = 210000
-	txNums = 1000    // 压测交易数量
-	acctNum = 2     // 随机生成的账户数量
+	txNums = 1    // 压测交易数量
+	acctNum = 1     // 随机生成的账户数量
 	transferAmt = 1 // oep4 和 erc20 转账的数量
 	walletFile := "wallet.dat"
 	pwd := []byte("server")
@@ -79,7 +79,7 @@ func main() {
 	testEthAddr := crypto.PubkeyToAddress(testPrivateKey.PublicKey)
 	testEthAddrOnt := common.Address(testEthAddr)
 	log.Infof("testEthAddrOnt: %s, testEthAddr: %s", testEthAddrOnt.ToBase58(), testEthAddr.String())
-	transferOng(sdk, acct, common.Address(testEthAddr), uint64(txNums*ongDecimal*5/100/acctNum))
+	transferOng(sdk, acct, common.Address(testEthAddr), uint64(txNums*ongDecimal*5/100/acctNum)+500*8000000)
 	sdk.WaitForGenerateBlock(time.Second*40, 1)
 
 	// okex   dbfea0be5695ca821effbdeb5ecfb8128916e749d8ff00a6927b0a871021db5d
@@ -608,7 +608,7 @@ func waitTx(sdk *ontology_go_sdk.OntologySdk, txHash string) {
 					log.Infof("notify: %v", n)
 				}
 			} else {
-				log.Infof("evt.CreatedContract: %s", evt.CreatedContract.ToHexString())
+				log.Infof("evt.CreatedContract: %s", evt.CreatedContract)
 			}
 			break
 		}
