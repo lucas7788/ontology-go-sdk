@@ -68,12 +68,6 @@ func main() {
 
 	ethClient, err := ethclient.Dial(testNet)
 	checkErr(err)
-
-	if false {
-		nonce := getTxNonce(ethClient, common2.HexToAddress("0xBedB5e30a7F96852a059BadE4c50Ab9E97d7AAeB"))
-		fmt.Println(nonce)
-		return
-	}
 	wallet, err := sdk.OpenWallet(walletFile)
 	checkErr(err)
 	acct, err := wallet.GetDefaultAccount(pwd)
@@ -102,7 +96,6 @@ func main() {
 	startCheckTxTask(sdk, checkTxQueue, true, exit, oep4Token, ethClient)
 	//txQueue := make(chan string, 10000)
 	//startGetMempoolTxTask(sdk, txQueue, true, exit)
-
 	accts := genAccts(sdk, wallet, acctNum, acct, oep4Addr, txNums)
 	ethKeys := genEthPrivateKey(acctNum, testPrivateKey, ethClient, erc20Addr, sdk, acct, txNums)
 
@@ -607,10 +600,10 @@ func deployEthContract(ethClient *ethclient.Client, sdk *ontology_go_sdk.Ontolog
 		opts.GasLimit = 5000000
 		ethTx, err := NewDeployEvmContract(opts, erc20Code, WingABI)
 		checkErr(err)
-		err = ethClient.SendTransaction(context.Background(), ethTx)
-		checkErr(err)
 		txHash := common.Uint256(ethTx.Hash())
 		log.Infof("deploy erc20 txHash: %s", txHash.ToHexString())
+		err = ethClient.SendTransaction(context.Background(), ethTx)
+		checkErr(err)
 		sdk.WaitForGenerateBlock(time.Second*40, 1)
 		waitTx(sdk, txHash.ToHexString())
 	}
