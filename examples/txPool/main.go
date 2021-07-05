@@ -162,7 +162,7 @@ func testNonce(ethClient *ethclient.Client, sdk *ontology_go_sdk.OntologySdk, er
 			log.Infof("txNum: %d, j: %d, txHash: %s", i, j, hash.ToHexString())
 			err := ethClient.SendTransaction(context.Background(), erc20Tx)
 			if err != nil {
-				if strings.Contains(err.Error(), "handleTransaction lower nonce") {
+				if strings.Contains(err.Error(), "handleTransaction lower nonce") || strings.Contains(err.Error(), "higher nonce exist") {
 					log.Infof("SendTransaction error: %s", err)
 				} else {
 					checkErr(err)
