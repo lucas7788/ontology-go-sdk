@@ -161,7 +161,13 @@ func testNonce(ethClient *ethclient.Client, sdk *ontology_go_sdk.OntologySdk, er
 			hash = common.Uint256(erc20Tx.Hash())
 			log.Infof("txNum: %d, j: %d, txHash: %s", i, j, hash.ToHexString())
 			err := ethClient.SendTransaction(context.Background(), erc20Tx)
-			checkErr(err)
+			if err != nil {
+				if strings.Contains(err.Error(), "handleTransaction lower nonce") {
+					log.Infof("SendTransaction error: %s", err)
+				} else {
+					checkErr(err)
+				}
+			}
 		}
 		from.nonce++
 	}
@@ -206,7 +212,7 @@ func exitFunc(oep4Addr common.Address, sdk *ontology_go_sdk.OntologySdk, accts [
 		}
 
 		bal := erc20BalanceOf(erc20Addr, ethClient, k.addr)
-		log.Errorf("erc20BalanceOf bal:%s", bal.String())
+		log.Infof("erc20BalanceOf bal:%s", bal.String())
 		transferErc20(ethClient, erc20Addr, k, testEthAddr, bal)
 
 		nonce, err := ethClient.PendingNonceAt(context.Background(), k.addr)
