@@ -341,10 +341,20 @@ func transferErc20(ethC *ethclient.Client, contractAddr common2.Address, from *E
 }
 
 func transferEth(ethC *ethclient.Client, from *ecdsa.PrivateKey, nonce uint64, to common2.Address, value *big.Int) {
-	tx := types.NewTransaction(nonce, to, value, gasLimit, big.NewInt(int64(gasPrice)), []byte{})
-	tx, err := types.SignTx(tx, types.HomesteadSigner{}, from)
+	chainId := big.NewInt(chainId)
+	opts, err := bind.NewKeyedTransactorWithChainID(from, chainId)
 	checkErr(err)
-	err = ethC.SendTransaction(context.Background(), tx)
+	opts.GasPrice = big.NewInt(int64(gasPrice))
+	opts.Nonce = big.NewInt(int64(nonce))
+	opts.GasLimit = gasLimit
+	parsed, err := abi.JSON(strings.NewReader(WingABI))
+	checkErr(err)
+	input, err := parsed.Pack("transfer", to, value)
+	checkErr(err)
+	deployTx := types.NewTransaction(opts.Nonce.Uint64(), common2.Address{}, opts.Value, opts.GasLimit, opts.GasPrice, input)
+	signedTx, err := opts.Signer(opts.From, deployTx)
+	checkErr(err)
+	err = ethC.SendTransaction(context.Background(), signedTx)
 	checkErr(err)
 }
 
